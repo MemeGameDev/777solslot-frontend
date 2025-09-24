@@ -43,8 +43,6 @@
   }
   function spawnParticles(x, y, count = 80) {
     if (!confettiCanvas) return;
-    const w = confettiCanvas.width / devicePixelRatio;
-    const h = confettiCanvas.height / devicePixelRatio;
     particles = particles.concat(Array.from({length: count}).map(() => {
       const isCoin = Math.random() < 0.32;
       const vx = (Math.random() - 0.5) * 6;
@@ -108,7 +106,7 @@
     if (particles.length > 0) {
       particleAnimId = requestAnimationFrame(particleLoop);
     } else {
-      cancelAnimationFrame(particleAnimId);
+      if (particleAnimId) cancelAnimationFrame(particleAnimId);
       particleAnimId = null;
     }
   }
@@ -127,7 +125,6 @@
   // ---------------------------
   function getBackendWS() {
     try {
-      // 0) localStorage override (set at runtime from browser console)
       if (typeof localStorage !== 'undefined' && localStorage.SOL_WS_HOST) {
         const v = localStorage.SOL_WS_HOST;
         if (v.startsWith('http://')) return v.replace(/^http:/, 'ws:');
@@ -137,7 +134,6 @@
     } catch (e) {}
 
     try {
-      // 1) meta tag override (useful for fixed endpoints)
       const meta = document.querySelector('meta[name="backend-ws"]');
       if (meta && meta.content) {
         if (location && location.protocol === 'https:' && meta.content.startsWith('ws://')) {
@@ -147,10 +143,8 @@
       }
     } catch (e) {}
 
-    // 2) global var if set elsewhere
     if (typeof window !== 'undefined' && window.SOL_WS_HOST) return window.SOL_WS_HOST;
 
-    // 3) final fallback to same host + port (dev fallback)
     const scheme = (location && location.protocol === 'https:') ? 'wss:' : 'ws:';
     return scheme + '//' + location.hostname + ':' + (location.port || WS_PORT) + '/';
   }
