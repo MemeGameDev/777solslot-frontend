@@ -1,2 +1,6 @@
 node_modules/@next/swc-win32-x64-msvc/*.node filter=lfs diff=lfs merge=lfs -text
 node_modules/@next/swc-*.node filter=lfs diff=lfs merge=lfs -text
+node_modules/@next/swc-*.node filter=lfs diff=lfs merge=lfs -text
+node_modules/**.node filter=lfs diff=lfs merge=lfs -text
+node_modules/@next/swc-*.node filter=lfs diff=lfs merge=lfs -text
+node_modules/**.node filter=lfs diff=lfs merge=lfs -text
