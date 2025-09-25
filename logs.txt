@@ -1,0 +1,1 @@
+﻿timestamp<TAB>type<TAB>wallet<TAB>tx<TAB>amount

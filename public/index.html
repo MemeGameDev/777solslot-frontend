@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>🎰 SLOTANA - 20 SUPER HOT</title>
+  <title>Casino Royale</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
 </head>
@@ -70,24 +70,27 @@
     </div>
 
     <div class="main-stage">
-      <h1>🎰 SLOTANA - 20 SUPER HOT 🎰</h1>
+      <h1>Casino Royale</h1>
+  <div id="token-ca-container" class="token-ca">CA: <span id="token-ca">loading...</span></div>
+  <p class="register-instruction">To play you have to register the wallet you bought with. (Necessary step for leaderboard purposes)</p>
+
 
       <div id="timer">5</div>
 
       <!-- Casino dashboard info bar (MC removed) -->
       <div class="info-box">
-        <div class="info-panel">
+        <div class="info-panel gold-bg">
           <span class="icon">👥</span>
           <span>Holders: <b id="holders">0</b></span>
         </div>
         <div class="divider"></div>
-        <div class="info-panel jackpot-panel">
+        <div class="info-panel gold-bg jackpot-panel">
           <span class="icon">💰</span>
           <span>Jackpot: <b id="jackpot" data-value="0">0</b> SOL</span>
         </div>
       </div>
 
-      <div id="reels-container">
+      <div id="reels-container" class="gold-bg">
         <div id="win-line"></div>
       </div>
 
@@ -102,7 +105,7 @@
 
       <div class="leaderboard">
         <h3>Top 5 Winners:</h3>
-        <ul id="leaderboard-list"></ul>
+        <ul id="leaderboard-list" class="gold-bg"></ul>
       </div>
     </div>
   </div>
