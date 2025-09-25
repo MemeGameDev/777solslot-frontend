@@ -1,36 +1,17 @@
 
-/* --- Casino Royale theming: subtle gold accent --- */
-.gold-bg {
-  background: linear-gradient(180deg, rgba(255, 241, 204, 0.65), rgba(255, 245, 209, 0.45));
-  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
-  border-radius: 10px;
-  padding: 8px;
+
+/* --- Token CA badge --- */
+.token-ca{
+  display:inline-block;
+  margin-left:12px;
+  padding:6px 10px;
+  border-radius:8px;
+  background: linear-gradient(180deg, rgba(255,250,230,0.85), rgba(255,245,220,0.6));
+  color:#4b2f00;
+  font-weight:700;
+  box-shadow:0 6px 18px rgba(0,0,0,0.08);
+  font-size:0.95rem;
 }
-
-/* Apply to common UI pieces */
-.info-panel { padding: 10px; border-radius: 8px; }
-.info-panel.gold-bg { padding: 12px; }
-
-#reels-container.gold-bg { padding: 12px; border-radius: 12px; }
-#leaderboard-list.gold-bg { padding: 8px; border-radius: 10px; }
-
-.token-ca {
-  display: inline-block;
-  margin: 8px 0 6px 0;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(255, 250, 230, 0.6);
-  font-weight: 600;
-  color: #5b3a00;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.06);
-}
-
-.register-instruction {
-  margin: 6px 0 12px 0;
-  font-size: 0.95rem;
-  color: #333;
-}
-
 
 /* frontend/public/style.css - vignette + stat borders + coin pop + moved stats into center column */
 
