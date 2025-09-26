@@ -188,3 +188,9 @@ html,body{height:100%;margin:0;background:linear-gradient(180deg,#030202,#050404
 .recent-history-panel { display:none !important; }
 .payout-percent-panel { display:none !important; }
 .demo-btn, #demo-btn { display:none !important; }
+
+
+/* payouts copy formatting */
+.payouts-copy p { margin: 6px 0; line-height: 1.35; }
+.payouts-copy .paytable { margin: 8px 0; padding-left: 18px; }
+.payouts-copy .paytable li { margin: 2px 0; }
