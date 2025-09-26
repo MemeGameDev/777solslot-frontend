@@ -6,9 +6,9 @@ export default function Home() {
   return (
     <>
       <Head>
+	<script src="/fetch-ca.js" defer></script>
         <title>Casino Royale</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* favicon (use a PNG from /public/assets to avoid 404) */}
         <link rel="icon" href="/assets/seven.png" />
         {/* IMPORTANT: must point to the BACKEND tunnel (wss://.), not the frontend one */}
         <meta name="backend-ws" content="wss://response-fortune-adrian-period.trycloudflare.com/" />
@@ -18,19 +18,25 @@ export default function Home() {
       <div id="app-root" className="app-root">
         <header className="header-row">
           <div className="title-block">
-            <h1 className="title">Casino Royale</h1>
-            <div className="subline">Luxury slot experience — real memecoin rewards</div>
-          </div>
+  <h1 className="title">Casino Royale</h1>
+  <div className="subline">Luxury slot experience — real rewards</div>
 
-          {/* TOKEN CA badge placed between title and wallet */}
-          <div className="ca-badge" title="Token contract address (mint)">
-            CA: <span id="token-ca">4UuWni2GEUkikJFGyF8n4onKRxqCCSw8et5FVszmpump</span>
-          </div>
+         {/* <<--- INSERT the CA wrapper here */}
+      <div className="token-ca-wrapper" style={{display:'inline-block', marginTop:'6px'}}>
+        <span className="token-ca token-ca-label">CA:</span>
+        <span id="token-ca-val" className="token-ca token-ca-val">—</span>
+       </div>
+      </div>
 
           <div className="wallet-block">
             <input id="wallet-input" placeholder="Wallet address" className="wallet-input" />
             <button id="register-btn" className="btn small">Register</button>
-            <div className="registered-line">Registered: <span id="registered-wallet">—</span></div>
+            <div className="registered-line">
+              <div className="register-instruction">
+                To play you have to register the wallet you bought with. (Necessary step for leaderboard purposes)
+              </div>
+              Registered: <span id="registered-wallet">—</span>
+            </div>
           </div>
         </header>
 
@@ -49,65 +55,63 @@ export default function Home() {
                   <img src="/assets/seven.png" alt="7" style={{height:22}}/>
                   <img src="/assets/seven.png" alt="7" style={{height:22}}/>
                   <img src="/assets/seven.png" alt="7" style={{height:22}}/>
-                  <span style={{marginLeft:8}}> = JACKPOT (500 pts)</span>
+                  = JACKPOT (500 pts)
                 </li>
               </ul>
             </div>
 
             <div className="panel leaderboard golden-panel">
-              <h4>Leaderboard — Top 10</h4>
-              <ol id="leaderboard-list" className="leaderboard-list"></ol>
+              <h3>Leaderboard</h3>
+              <ul id="leaderboard-list" className="leaderboard-list"></ul>
+            </div>
+
+            <div className="panel distributed-card golden-panel">
+              <h3>Distributed</h3>
+              <div id="distributed-value" className="stat-card value">0</div>
             </div>
           </aside>
 
           <section className="center-col">
+            {/* stats row (Holders, Jackpot, Payout-in, Timer) */}
             <div className="stats-row">
               <div className="stat-card holders-card golden-panel">
                 <div className="label">Holders</div>
-                <div id="holders" className="value">0</div>
+                <div id="holders-value" className="value">0</div>
               </div>
 
               <div className="stat-card jackpot-card golden-panel">
                 <div className="label">Jackpot</div>
-                <div id="jackpot" className="value">0.0000 SOL</div>
+                <div id="jackpot-value" className="value glow">0</div>
               </div>
 
-              <div className="stat-card distributed-card golden-panel">
-                <div className="label">Distributed</div>
-                <div id="distributed-prizes" className="value">0.0000 SOL</div>
-              </div>
-
-              <div className="stat-card timer-card golden-panel">
-                <div className="label">Payout in</div>
-                <div id="payout-timer" className="value">--:--</div>
+              <div className="stat-card payoutin-card golden-panel">
+                <div className="label">Payout In</div>
+                <div id="timer-value" className="value">00:00</div>
               </div>
             </div>
 
-            <div className="panel machine-panel golden-panel" id="machine-panel" style={{position:'relative', overflow:'visible'}}>
-              <canvas id="confetti-canvas" style={{position:'absolute', inset:0, pointerEvents:'none'}}></canvas>
+            {/* machine panel (slot machine) */}
+            <div id="machine-panel" className="machine-panel golden-panel">
               <div id="reels-container" className="reels-container"></div>
-            </div>
 
-            <div className="controls-panel">
-              <button id="play-btn" className="btn play" disabled>PLAY</button>
-              <div id="result" className="result-text">Try Again</div>
-              <div id="register-note" className="result-text register-note">
-                To play you have to register the wallet you bought with. (Necessary step for leaderboard purposes)
+              <div className="controls-panel">
+                <button id="spin-btn" className="btn play">SPIN</button>
+                <div id="result-text" className="result-text">Good luck!</div>
+              </div>
+
+              <div id="history" className="panel" style={{marginTop:12}}>
+                <h4>Recent History</h4>
+                <ul id="history-list"></ul>
               </div>
             </div>
           </section>
         </main>
 
-        {/* audio */}
-        <audio id="background-sound" preload="auto" loop src="/assets/background.mp3"></audio>
-        <audio id="spin-sound" preload="auto" src="/assets/spin-sound.mp3"></audio>
-        <audio id="small-win" preload="auto" src="/assets/small-win.mp3"></audio>
-        <audio id="big-win" preload="auto" src="/assets/big-win.mp3"></audio>
-        <audio id="jackpot-win" preload="auto" src="/assets/jackpot-win.mp3"></audio>
+        {/* Keep existing client script(s) included by the app */}
+        {/* Ensure fetch-ca.js loads after the page is interactive so it can populate #token-ca */}
+        <Script src="/fetch-ca.js" strategy="afterInteractive" />
+        {/* Your main client logic (existing) should still load as it did before (e.g. script.js included by the Next build or via pages) */}
       </div>
-
-      <Script src="/fetch-ca.js" strategy="afterInteractive" />
-      <Script src="/script.js" strategy="afterInteractive" />
     </>
   );
 }

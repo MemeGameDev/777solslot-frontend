@@ -1,20 +1,40 @@
 // public/fetch-ca.js
-// Simple helper: fetch backend config.token_ca and populate #token-ca-val
+// Loads the token CA from backend /config and inserts it in the page.
+// Safe & idempotent, runs on DOMContentLoaded.
+
 (function () {
-  async function setCA() {
+  async function ensureCA() {
     try {
-      const res = await fetch('/config', { cache: 'no-store' });
-      if (!res.ok) return console.warn('fetch-ca: /config returned', res.status);
-      const json = await res.json();
-      const val = json && (json.token_ca || json.token_ca === '' ? json.token_ca : null);
-      const el = document.getElementById('token-ca-val');
-      if (el) el.textContent = val && val.length ? val : '—';
+      // backend endpoint must be reachable from browser
+      const resp = await fetch('/config', { cache: 'no-store' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const val = (data && data.token_ca) ? String(data.token_ca) : '';
+      // find the element where we show CA
+      let el = document.getElementById('token-ca-val');
+      if (!el) {
+        // if not present, try to create a small fallback container next to title
+        const title = document.querySelector('.title-block') || document.querySelector('.title');
+        if (title) {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'token-ca-wrapper';
+          wrapper.innerHTML = `<span class="token-ca-label">CA:</span> <span id="token-ca-val" class="token-ca-val">–</span>`;
+          title.parentNode.insertBefore(wrapper, title.nextSibling);
+          el = wrapper.querySelector('#token-ca-val');
+        }
+      }
+      if (el) {
+        el.textContent = val || '—';
+      }
     } catch (e) {
-      console.warn('fetch-ca: error', e?.message || e);
+      // silent failure, don't break the page
+      console.warn('fetch-ca.js error', e && e.message ? e.message : e);
     }
   }
 
-  // run asap, and again after DOM loaded for safety
-  setCA();
-  document.addEventListener('DOMContentLoaded', setCA);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', ensureCA);
+  } else {
+    ensureCA();
+  }
 })();

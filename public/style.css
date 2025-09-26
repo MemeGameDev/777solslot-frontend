@@ -111,6 +111,12 @@ html,body{height:100%;margin:0;background:linear-gradient(180deg,#030202,#050404
 /* small panel tokens / reg instruction */
 .register-instruction { margin: 6px 0 12px 0; font-size: 0.95rem; color: #FFDFA8; }
 
+/* token CA styling (subtle gold) */
+.token-ca-wrapper { display:inline-flex; align-items:center; gap:8px; margin-left:8px; }
+.token-ca { font-weight:700; padding:6px 10px; border-radius:8px; background: rgba(255,245,210,0.06); color:#FFE6A8; border:1px solid rgba(255,200,80,0.08); box-shadow: 0 6px 18px rgba(0,0,0,0.12); font-size:0.95rem; }
+.token-ca-val { color:#ffecb3; font-family:monospace; padding-left:6px; }
+.golden-panel, .gold-bg { /* you already added a style, ensure it exists */ }
+
 /* responsive */
 @media (max-width:980px){
   .main-grid{grid-template-columns:1fr}
