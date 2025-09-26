@@ -1,4 +1,4 @@
-// public/script.js (full file)
+// public/script.js
 // Combined, cleaned-up client script:
 // - disables Play until registered (and holder).
 // - registers via ws, handles register_result / registration_revoked.
@@ -22,8 +22,8 @@ function make(tag, cls) { const e = document.createElement(tag); if (cls) e.clas
 // DOM elements (try id then class)
 const reelsContainer   = $id('reels-container', '.reels-container');
 const resultDiv        = $id('result', '.result-text');
-const holdersSpan      = $id('holders', '.holders-count') || document.querySelector('#holders');
-const jackpotSpan      = $id('jackpot', '.jackpot-span') || document.querySelector('#jackpot');
+const holdersSpan      = $id('holders', '.holders-count') || document.querySelector('#holders') || document.querySelector('#holders-stat');
+const jackpotSpan      = $id('jackpot', '.jackpot-span') || document.querySelector('#jackpot') || document.querySelector('#jackpot-stat');
 const historyList      = $id('history-list', '.history-list') || document.querySelector('#history-list');
 const leaderboardList  = $id('leaderboard-list', '.leaderboard-list') || document.querySelector('#leaderboard-list');
 const timerDiv         = $id('timer', '.timer') || document.querySelector('#timer');
@@ -90,7 +90,7 @@ ws.addEventListener('message', (ev) => {
       setPlayEnabled(false);
       showToast('Your registration was removed — you no longer hold the token', 'error');
     } else {
-      // if some other wallets removed, just rebuild state via state broadcast
+      // some other wallets removed; we'll get updated state via state broadcast
     }
     return;
   }
@@ -118,7 +118,9 @@ ws.addEventListener('message', (ev) => {
 
   // state broadcast (default)
   if (data.type === 'state') {
-    if (typeof data.holders === 'number') holdersSpan && (holdersSpan.textContent = String(data.holders));
+    if (typeof data.holders === 'number') {
+      holdersSpan && (holdersSpan.textContent = String(data.holders));
+    }
     if (typeof data.jackpot === 'number' || typeof data.jackpot === 'string') {
       const v = Number(data.jackpot || 0);
       if (jackpotSpan) jackpotSpan.textContent = v.toFixed(4) + ' SOL';
@@ -151,7 +153,12 @@ ws.addEventListener('message', (ev) => {
     // round timer
     if (data.round && data.round.end) {
       payoutEndTs = Number(data.round.end) || null;
-      startPayoutTimer();
+      startCountdownTo(payoutEndTs);
+    }
+    // token ca if provided
+    if (data.token_ca) {
+      const el = document.getElementById('token-ca-val');
+      if (el) el.textContent = data.token_ca;
     }
     return;
   }
@@ -268,6 +275,7 @@ function stopReels(finalReels, resultText){
 }
 
 // Play/Timer logic (client-side timer triggers server spin)
+// A short timer is run client-side for UI; server is source-of-truth for results.
 let clientTimer = 10;
 let cycleState = 'timer'; // 'timer', 'spinning', 'result'
 function clientTick() {
@@ -292,17 +300,51 @@ function clientTick() {
 }
 
 // update payment countdown based on server round end (payoutEndTs)
-function startPayoutTimer(){
-  if (payoutInterval) clearInterval(payoutInterval);
-  payoutInterval = setInterval(()=> {
-    if (!payoutEndTs) { if (timerDiv) timerDiv.textContent = '00:00'; return; }
-    const diff = Math.max(0, Math.floor((payoutEndTs - Date.now()) / 1000));
-    const mm = Math.floor(diff / 60);
-    const ss = diff % 60;
-    if (timerDiv) timerDiv.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
-  }, 500);
+function startCountdownTo(timestampMs) {
+  // clear any existing interval
+  if (window._payoutInterval) clearInterval(window._payoutInterval);
+
+  function tick() {
+    const now = Date.now();
+    let ms = Math.max(0, timestampMs - now);
+    const sec = Math.floor(ms / 1000);
+    const min = Math.floor(sec / 60);
+    const s = sec % 60;
+    const display = `${String(min).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    const el = document.getElementById('payout-timer'); // ensure you have this id in HTML
+    if (el) el.textContent = display;
+
+    if (ms <= 0) {
+      // reached 0: trigger event to ask backend to distribute prizes
+      try {
+        const backend = window.BACKEND_URL || (document.querySelector('meta[name="backend-url"]') && document.querySelector('meta[name="backend-url"]').content) || '';
+        const url = (backend ? backend : '') + '/admin/execute-payout';
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        }).catch(e => console.warn('payout trigger failed', e));
+      } catch(e){ console.warn(e); }
+      // reset: start again from +10min locally until server broadcasts new round
+      timestampMs = Date.now() + 10 * 60 * 1000;
+    }
+  }
+
+  tick();
+  window._payoutInterval = setInterval(tick, 1000);
 }
-startPayoutTimer();
+
+
+// when fetch-ca.js resolves it dispatches 'next_payout_ready' event
+window.addEventListener('next_payout_ready', (ev) => {
+  const next = ev.detail && ev.detail.nextPayout;
+  if (next && Number(next) > 0) startCountdownTo(Number(next));
+});
+
+// if APP_CONFIG already present at page load:
+if (window.APP_CONFIG && window.APP_CONFIG.nextPayout) {
+  startCountdownTo(Number(window.APP_CONFIG.nextPayout));
+}
 
 // play sound depending on result string
 function playResultSound(resultText){
@@ -345,8 +387,6 @@ if (playBtn) {
 
 // small "auto timer" loop for clientTick (keeps local UI responsive; final result controlled by server)
 setInterval(clientTick, 1000);
-
-// when ws opens we also requested state; but also handle initial enablement if server accepts later
 
 // initial local styling/UX
 setRegisteredUI(null);
