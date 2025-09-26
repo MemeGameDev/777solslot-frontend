@@ -1,34 +1,21 @@
 // public/fetch-ca.js
+// Loads /config from the backend and writes token CA into #token-ca-val
 (function () {
   async function ensureCA() {
     try {
       const res = await fetch('/config', { cache: 'no-store' });
-      if (!res.ok) return hide();
+      if (!res.ok) throw new Error('no config');
       const json = await res.json();
-      const token = (json && json.token_ca) ? String(json.token_ca) : '';
-      const elVal = document.getElementById('token-ca-val');
-      const container = document.getElementById('token-ca-container');
-      if (elVal && container && token) {
-        elVal.textContent = token;
-        container.style.display = 'inline-block';
-      } else if (container) {
-        container.style.display = 'none';
-      }
-    } catch (e) {
-      // silent
-      const container = document.getElementById('token-ca-container');
-      if (container) container.style.display = 'none';
+      const el = document.getElementById('token-ca-val');
+      if (el) el.textContent = json.token_ca || '—';
+    } catch (err) {
+      console.warn('fetch-ca: failed to load /config', err);
+      const el = document.getElementById('token-ca-val');
+      if (el && el.textContent === '') el.textContent = '—';
     }
   }
 
-  function hide() {
-    const container = document.getElementById('token-ca-container');
-    if (container) container.style.display = 'none';
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', ensureCA);
-  } else {
-    ensureCA();
-  }
+  // run now and periodically (in case backend changed)
+  ensureCA();
+  setInterval(ensureCA, 30_000);
 })();
