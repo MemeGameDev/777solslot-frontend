@@ -1,16 +1,23 @@
+/* public/script.js
+   Merged + adapted:
+   - Uses IDs from pages/index.js (holders-value, jackpot-value, timer-value, result-text, spin-btn)
+   - Robust token-CA loader (tries window var, /config, backend-ws -> https /config)
+   - Keeps existing spin logic and WS handling
+*/
+
 const symbols = ['🍒', '🍋', '🍇', '7'];
 
+/* --- Element refs (IDs match pages/index.js) --- */
 const reelsContainer   = document.getElementById('reels-container');
-const resultDiv        = document.getElementById('result');
-const holdersSpan      = document.getElementById('holders');
-// MC removed
-const jackpotSpan      = document.getElementById('jackpot');
+const resultDiv        = document.getElementById('result-text') || document.getElementById('result');
+const holdersSpan      = document.getElementById('holders-value') || document.getElementById('holders');
+const jackpotSpan      = document.getElementById('jackpot-value') || document.getElementById('jackpot');
 const historyList      = document.getElementById('history-list');
 const leaderboardList  = document.getElementById('leaderboard-list');
-const timerDiv         = document.getElementById('timer');
-const playBtn          = document.getElementById('play-btn');
+const timerDiv         = document.getElementById('timer-value') || document.getElementById('timer');
+const playBtn          = document.getElementById('spin-btn') || document.getElementById('play-btn');
 
-// Sounds
+/* Sounds (may be absent) */
 const spinSound        = document.getElementById('spin-sound');
 const smallWinSound    = document.getElementById('small-win');
 const bigWinSound      = document.getElementById('big-win');
@@ -24,77 +31,101 @@ let cycleState   = 'timer';
 let timeLeft     = 5;
 let reelIntervals = [];
 
-// Hold backend results until spin ends
+/* Hold backend results until spin ends */
 let pendingFinalReels = null;
 let pendingResultText = null;
 
-// WebSocket
-const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-const ws      = new WebSocket(`${wsProto}://${location.host}`);
+/* ---------------- WebSocket setup ----------------
+   Prefer meta[name="backend-ws"] if present (set in pages/index.js).
+   Fall back to location.host (use same-origin websocket server).
+*/
+function getBackendWsUrl() {
+  const meta = document.querySelector('meta[name="backend-ws"]');
+  if (meta && meta.content) {
+    // ensure trailing slash handling
+    return meta.content.replace(/\s+$/,'');
+  }
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${location.host}`;
+}
+const wsUrl = getBackendWsUrl();
+let ws;
+try {
+  ws = new WebSocket(wsUrl);
+} catch (e) {
+  // fallback to host-based ws
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+}
 
 ws.addEventListener('open', () => {
   safeSend({ action: 'requestState' });
 });
 
-// Build reels initially
-for (let col = 0; col < 3; col++) {
-  const colDiv = document.createElement('div');
-  colDiv.classList.add('reel-col');
-  for (let row = 0; row < 3; row++) {
-    colDiv.appendChild(createSymbol(randomSymbol()));
+/* ---------- initial reels build ---------- */
+if (reelsContainer) {
+  for (let col = 0; col < 3; col++) {
+    const colDiv = document.createElement('div');
+    colDiv.classList.add('reel-col');
+    for (let row = 0; row < 3; row++) {
+      colDiv.appendChild(createSymbol(randomSymbol()));
+    }
+    reelsContainer.appendChild(colDiv);
   }
-  reelsContainer.appendChild(colDiv);
 }
 
-// Handle server messages
+/* ---------- WS message handling ---------- */
 ws.addEventListener('message', (ev) => {
   let data;
   try { data = JSON.parse(ev.data); } catch { return; }
   if (!data || typeof data !== 'object') return;
 
   // holders
-  if (typeof data.holders === 'number') holdersSpan.textContent = data.holders;
+  if (typeof data.holders === 'number' && holdersSpan) holdersSpan.textContent = data.holders;
 
   // jackpot
   const jp = (typeof data.jackpot === 'number') ? data.jackpot : 0;
-  if (window.animateJackpot) {
-    animateJackpot(jp); // smooth roll
-  } else {
-    if (jackpotSpan) jackpotSpan.textContent = jp.toFixed(4);
+  if (jackpotSpan) {
+    // if you have a smooth animateJackpot function, keep using it — otherwise set text
+    if (window.animateJackpot) window.animateJackpot(jp);
+    else jackpotSpan.textContent = (typeof jp === 'number') ? jp.toFixed(4) : String(jp);
+    jackpotSpan.classList.toggle('high', jp > 1);
   }
-  if (jackpotSpan) jackpotSpan.classList.toggle('high', jp > 1);
 
   // history (only payouts)
-  if (historyList) historyList.innerHTML = '';
-  (Array.isArray(data.history) ? data.history : []).forEach(win => {
-    const li = document.createElement('li');
+  if (historyList) {
+    historyList.innerHTML = '';
+    (Array.isArray(data.history) ? data.history : []).forEach(win => {
+      const li = document.createElement('li');
+      const combo = win.combo || '';
+      if (/Jackpot/i.test(combo))       li.classList.add('jackpot-win');
+      else if (/x3/.test(combo))        li.classList.add('triple-win');
+      else if (/x2/.test(combo))        li.classList.add('double-win');
 
-    const combo = win.combo || '';
-    if (/Jackpot/i.test(combo))       li.classList.add('jackpot-win');
-    else if (/x3/.test(combo))        li.classList.add('triple-win');
-    else if (/x2/.test(combo))        li.classList.add('double-win');
+      const amt = Number(win.amount ?? 0);
+      const sig = String(win.sig || '');
+      const wallet = String(win.wallet || '????');
 
-    const amt = Number(win.amount ?? 0);
-    const sig = String(win.sig || '');
-    const wallet = String(win.wallet || '????');
-
-    li.innerHTML = `
-      ${wallet} — <strong>${amt.toFixed(4)} SOL</strong>
-      <span style="opacity:0.85">(${combo || "Win"})</span>
-      ${sig ? `<a href="https://solscan.io/tx/${sig}" target="_blank">[tx]</a>` : ''}
-    `;
-    historyList.appendChild(li);
-  });
+      li.innerHTML = `
+        ${wallet} — <strong>${amt.toFixed(4)} SOL</strong>
+        <span style="opacity:0.85">(${combo || "Win"})</span>
+        ${sig ? `<a href="https://solscan.io/tx/${sig}" target="_blank">[tx]</a>` : ''}
+      `;
+      historyList.appendChild(li);
+    });
+  }
 
   // leaderboard
-  if (leaderboardList) leaderboardList.innerHTML = '';
-  (Array.isArray(data.leaderboard) ? data.leaderboard : []).forEach(entry => {
-    const li = document.createElement('li');
-    const w = String(entry.wallet || '????');
-    const c = Number(entry.wins || 0);
-    li.textContent = `${w} - ${c} wins`;
-    leaderboardList.appendChild(li);
-  });
+  if (leaderboardList) {
+    leaderboardList.innerHTML = '';
+    (Array.isArray(data.leaderboard) ? data.leaderboard : []).forEach(entry => {
+      const li = document.createElement('li');
+      const w = String(entry.wallet || '????');
+      const c = Number(entry.wins || 0);
+      li.textContent = `${w} - ${c} wins`;
+      leaderboardList.appendChild(li);
+    });
+  }
 
   // capture final result (don’t stop reels yet)
   if (typeof data.currentSpin?.result === 'string' &&
@@ -105,17 +136,18 @@ ws.addEventListener('message', (ev) => {
   }
 });
 
-// Helpers
+/* ---------- Helpers ---------- */
 function safeSend(obj){
   try {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   } catch {}
 }
 function randomSymbol(){ return symbols[Math.floor(Math.random()*symbols.length)]; }
 function createSymbol(sym){
   const el = document.createElement('div');
   el.classList.add('reel-symbol');
-  if (sym === '7') el.classList.add('seven'); else el.textContent = sym;
+  if (sym === '7') { el.classList.add('seven'); el.textContent = '7'; }
+  else el.textContent = sym;
   return el;
 }
 
@@ -152,7 +184,7 @@ function startReels(){
   timeLeft = 5;
   if (timerDiv) timerDiv.style.visibility = 'hidden';
 
-  if (audioAllowed) {
+  if (audioAllowed && spinSound) {
     try {
       spinSound.currentTime = 0;
       spinSound.loop = true;
@@ -179,12 +211,12 @@ function stopReels(finalReels, resultText){
         stopAudio(spinSound);
 
         // color-coded result text
-        if (resultDiv) {
-          resultDiv.className = ''; // reset classes
-          resultDiv.textContent = resultText || 'Try Again';
-          if (resultText && /Jackpot/i.test(resultText)) resultDiv.classList.add('jackpot-win');
-          else if (resultText && /x3/.test(resultText))  resultDiv.classList.add('triple-win');
-          else if (resultText && /x2/.test(resultText))  resultDiv.classList.add('double-win');
+        if (resultDiv) resultDiv.className = ''; // reset classes
+        if (resultDiv) resultDiv.textContent = resultText || 'Try Again';
+        if (resultDiv && resultText) {
+          if (/Jackpot/i.test(resultText)) resultDiv.classList.add('jackpot-win');
+          else if (/x3/.test(resultText))  resultDiv.classList.add('triple-win');
+          else if (/x2/.test(resultText))  resultDiv.classList.add('double-win');
         }
 
         if (resultText && resultText !== 'Try Again') {
@@ -209,7 +241,7 @@ function updateTimer(){
   if (cycleState !== 'timer') return;
 
   if (timerDiv) timerDiv.textContent = timeLeft;
-  if (audioAllowed) {
+  if (audioAllowed && timerSound) {
     try {
       timerSound.currentTime = 0;
       timerSound.play().catch(()=>{});
@@ -235,9 +267,9 @@ function celebrateWin(result){
   const payout = payouts[result] || 0;
 
   if (audioAllowed){
-    if (payout === 100)      jackpotWinSound.play().catch(()=>{});
-    else if (payout >= 10)   bigWinSound.play().catch(()=>{});
-    else if (payout > 0)     smallWinSound.play().catch(()=>{});
+    if (payout === 100 && jackpotWinSound)      jackpotWinSound.play().catch(()=>{});
+    else if (payout >= 10 && bigWinSound)       bigWinSound.play().catch(()=>{});
+    else if (payout > 0 && smallWinSound)       smallWinSound.play().catch(()=>{});
   }
 
   if (payout > 0){
@@ -245,6 +277,8 @@ function celebrateWin(result){
     if (payout === 100){ particleCount = 500; spread = 120; originY = 0.6; }
     else if (payout >= 10){ particleCount = 250; spread = 100; originY = 0.7; }
     else { particleCount = 90; spread = 70; originY = 0.8; }
+
+    // confetti if library present
     if (typeof confetti === 'function') {
       confetti({ particleCount, spread, startVelocity: 45, origin: { y: originY } });
     }
@@ -266,12 +300,13 @@ function celebrateWin(result){
 }
 
 /* ---------- Helpers ---------- */
-function stopAudio(aud){ try{ aud.pause(); aud.currentTime = 0; }catch{} }
+function stopAudio(aud){ try{ if (aud) { aud.pause(); aud.currentTime = 0; } }catch{} }
 
+/* ---------- Play button ---------- */
 if (playBtn) {
   playBtn.addEventListener('click', () => {
     audioAllowed = true;
-    try { backgroundSound.play().catch(()=>{}); } catch {}
+    try { if (backgroundSound) backgroundSound.play().catch(()=>{}); } catch {}
     if (!isSpinning && cycleState === 'timer') {
       timeLeft = 0; // trigger first spin immediately
       updateTimer();
@@ -279,70 +314,63 @@ if (playBtn) {
   });
 }
 
-/* ---------- UI tweaks: CA + Register text wiring (merged safely) ---------- */
-
-/*
-  These functions are non-destructive and won't interfere with existing register logic.
-  They:
-   - set the register instruction text as requested
-   - attempt to fetch /config to populate #token-ca-val if present
-   - wire a register button fallback that calls your original register if you expose it as window.originalRegister
+/* ---------- Token CA loader (robust) ----------
+   - If fetch-ca.js sets window.__TOKEN_CA__, use it
+   - Otherwise try GET /config (same origin)
+   - Otherwise try backend-ws meta -> https://.../config
+   - Retries a few times because fetch-ca / backend might not be ready at exact time
 */
-
-const REGISTER_INSTRUCTION = "To play you have to register the wallet you bought with. (Necessary step for leaderboard purposes)";
-
-function updateRegisterText(){
-  const el = document.querySelector('.register-instruction') || document.querySelector('.register-note') || document.querySelector('.registered-line');
-  if (el) el.textContent = REGISTER_INSTRUCTION;
+async function tryFetchConfigFromOrigin() {
+  try {
+    const r = await fetch('/config', {cache:'no-cache'});
+    if (!r.ok) throw new Error('not-ok');
+    const j = await r.json();
+    if (j && j.token_ca) return j.token_ca;
+  } catch (e) {}
+  return null;
+}
+async function tryFetchConfigFromBackendMeta() {
+  try {
+    const meta = document.querySelector('meta[name="backend-ws"]');
+    if (!meta || !meta.content) return null;
+    // convert wss://host to https://host (or ws->http)
+    let backend = meta.content.trim();
+    backend = backend.replace(/^wss:\/\//i, 'https://').replace(/^ws:\/\//i, 'http://').replace(/\/$/, '');
+    // prefer https
+    if (!/^https?:\/\//i.test(backend)) backend = (location.protocol === 'https:' ? 'https://' : 'http://') + backend;
+    const r = await fetch(`${backend}/config`, {cache:'no-cache'});
+    if (!r.ok) throw new Error('not-ok');
+    const j = await r.json();
+    if (j && j.token_ca) return j.token_ca;
+  } catch (e) {}
+  return null;
 }
 
-async function ensureCA(){
+async function loadTokenCA(retries = 6, delayMs = 800) {
   const el = document.getElementById('token-ca-val');
   if (!el) return;
-  if (el.textContent && el.textContent.trim() !== '—') return;
-  try {
-    const res = await fetch('/config', { cache: 'no-store' });
-    if (!res.ok) return;
-    const j = await res.json();
-    if (j && j.token_ca) {
-      el.textContent = j.token_ca;
-    }
-  } catch (e) {
-    // not critical; ignore
-    console.warn('ensureCA failed:', e && e.message ? e.message : e);
+  // 1) window var (fetch-ca.js may set this)
+  if (window.__TOKEN_CA__) {
+    el.textContent = window.__TOKEN_CA__;
+    return;
+  }
+  // 2) try same-origin /config
+  let ca = await tryFetchConfigFromOrigin();
+  if (ca) { el.textContent = ca; return; }
+  // 3) try backend meta
+  ca = await tryFetchConfigFromBackendMeta();
+  if (ca) { el.textContent = ca; return; }
+
+  // retry a few times (maybe fetch-ca runs slightly later)
+  if (retries > 0) {
+    setTimeout(() => loadTokenCA(retries - 1, delayMs), delayMs);
   }
 }
 
-function wireRegisterButton(){
-  const btn = document.getElementById('register-btn');
-  if (!btn) return;
-  btn.addEventListener('click', (ev) => {
-    // if the app has its own register routine exposed, prefer that
-    if (typeof window.originalRegister === 'function') {
-      try { window.originalRegister(ev); } catch (e) { console.warn('originalRegister error', e); }
-      return;
-    }
+// kick off CA loader (non-blocking)
+loadTokenCA(8, 700);
 
-    // fallback behavior: show registered line for UX
-    const input = document.getElementById('wallet-input');
-    const regLine = document.getElementById('registered-line');
-    const addr = input && input.value ? input.value.trim() : '';
-    if (regLine) regLine.textContent = addr ? `Registered: ${addr}` : 'Registered: —';
-  });
-}
+/* If your separate fetch-ca.js script exists it can set window.__TOKEN_CA__ for immediate display,
+   otherwise loadTokenCA fallback will fetch /config or backend /config. */
 
-function uiInit() {
-  updateRegisterText();
-  wireRegisterButton();
-  ensureCA();
-}
-
-// run ASAP
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', uiInit);
-} else {
-  uiInit();
-}
-
-// Auto-load token CA (legacy small loader) - keep for compatibility; fetch-ca.js also populates #token-ca-val
-(function(){var s=document.createElement('script');s.src='/fetch-ca.js';s.async=true;document.head.appendChild(s);})();
+/* ---------- END of client script ---------- */
