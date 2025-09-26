@@ -53,15 +53,15 @@ export default function Home() {
             </div>
 
             <div className="panel payouts-panel golden-panel">
-              <h4>Payouts (per round)</h4>
-              <ol style={{marginTop:8}}>
-                <li>1st — 30%</li>
-                <li>2nd — 20%</li>
-                <li>3rd — 15%</li>
-                <li>4th — 10%</li>
-                <li>Remaining holders split — 25%</li>
-              </ol>
-            </div>
+  <h4>Payouts (per round) - Jackpot is funded by the creator fees collected during the round.</h4>
+  <ol style={{marginTop:8}}>
+    <li>1st place - 30%</li>
+    <li>2nd place - 20%</li>
+    <li>3rd place - 15%</li>
+    <li>4th place - 10%</li>
+    <li>5th - 10th - split the remaining 25%</li>
+  </ol>
+  <div style={{marginTop:8,fontSize:13,color:'var(--sub)'}}>Minimum payout enforced: 0.01 SOL</div>
           </aside>
 
           <section className="center-col">
