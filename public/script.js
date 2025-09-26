@@ -1,386 +1,358 @@
-// public/script.js
-// Controls spins + registration + play-permission + payout timer + UI toasts
+// public/script.js (full file)
+// Combined, cleaned-up client script:
+// - disables Play until registered (and holder).
+// - registers via ws, handles register_result / registration_revoked.
+// - uses assets/seven.png for the "7" symbol.
+// - displays toasts, handles spin_result and state updates.
 
-const symbols = ['🍒','🍋','🍇','7'];
+const symbols = ['🍒', '🍋', '🍇', '7'];
 
-const reelsContainer   = document.getElementById('reels-container');
-const resultDiv        = document.getElementById('result');
-const holdersSpan      = document.getElementById('holders');
-const jackpotSpan      = document.getElementById('jackpot');
-const historyList      = document.getElementById('history-list'); // optional
-const leaderboardList  = document.getElementById('leaderboard-list');
-const timerDiv         = document.getElementById('payout-timer');
-const playBtn          = document.getElementById('play-btn');
-const registerBtn      = document.getElementById('register-btn');
-const walletInput      = document.getElementById('wallet-input');
-const registeredEl     = document.getElementById('registered-wallet');
-const distributedSpan  = document.getElementById('distributed-prizes');
+// DOM helpers: tolerant selectors (id first, then class)
+function $id(name, clsFallback) {
+  const byId = document.getElementById(name);
+  if (byId) return byId;
+  if (clsFallback) {
+    return document.querySelector(clsFallback);
+  }
+  return null;
+}
+function $(s) { return document.querySelector(s); }
+function make(tag, cls) { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
+
+// DOM elements (try id then class)
+const reelsContainer   = $id('reels-container', '.reels-container');
+const resultDiv        = $id('result', '.result-text');
+const holdersSpan      = $id('holders', '.holders-count') || document.querySelector('#holders');
+const jackpotSpan      = $id('jackpot', '.jackpot-span') || document.querySelector('#jackpot');
+const historyList      = $id('history-list', '.history-list') || document.querySelector('#history-list');
+const leaderboardList  = $id('leaderboard-list', '.leaderboard-list') || document.querySelector('#leaderboard-list');
+const timerDiv         = $id('timer', '.timer') || document.querySelector('#timer');
+const playBtn          = $id('play-btn', '.btn.play') || document.querySelector('.btn.play');
+const walletInput      = $id('wallet-input', '.wallet-input') || document.querySelector('.wallet-input');
+const registerBtn      = $id('register-btn', '.register-btn') || document.querySelector('.register-btn');
+const registeredLine   = $id('registered-line', '.registered-line') || document.querySelector('.registered-line');
+const jackpotCard      = document.querySelector('.jackpot-card') || null;
+const distributedSpan  = $id('distributed', '.distributed') || document.querySelector('#distributed');
 
 const spinSound        = document.getElementById('spin-sound');
 const smallWinSound    = document.getElementById('small-win');
 const bigWinSound      = document.getElementById('big-win');
 const jackpotWinSound  = document.getElementById('jackpot-win');
+const timerSound       = document.getElementById('timer-sound');
 const backgroundSound  = document.getElementById('background-sound');
 
 let audioAllowed = false;
 let isSpinning   = false;
 let reelIntervals = [];
-let payoutSeconds = 600; // 10 minutes
-let payoutTimerId = null;
+let pendingFinalReels = null;
+let pendingResultText = null;
+let registeredWallet = null;
+let payoutEndTs = null;
+let payoutInterval = null;
 
-// small toast system
-const toastWrap = document.createElement('div');
-toastWrap.className = 'toast-wrap';
-document.body.appendChild(toastWrap);
-function showToast(message, type = 'info', ms = 3500){
-  const t = document.createElement('div');
-  t.className = 'toast';
-  if (type === 'error') t.style.borderLeftColor = 'rgba(255,100,100,0.9)';
-  t.textContent = message;
-  toastWrap.appendChild(t);
-  setTimeout(()=> {
-    t.style.opacity = 0;
-    setTimeout(()=> t.remove(), 300);
-  }, ms);
-}
-
-// meta backend ws
+// backend ws URL: prefer meta tag if present
 const metaWs = document.querySelector('meta[name="backend-ws"]');
-const wsProto = metaWs ? (metaWs.content.startsWith('wss') ? 'wss' : 'ws') : (location.protocol === 'https:' ? 'wss' : 'ws');
-const wsHost  = metaWs ? metaWs.content.replace(/^wss?:\/\//,'').replace(/\/$/,'') : location.host;
-let ws;
-try {
-  ws = new WebSocket(`${wsProto}://${wsHost}`);
-} catch (e) {
-  ws = null;
-}
-const pendingRPC = {}; // id -> {resolve, reject, timer}
+const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+const wsUrl = (metaWs && metaWs.content) ? metaWs.content : `${wsProto}://${location.host}`;
+const ws = new WebSocket(wsUrl);
 
-// simple RPC helper (tries WS first, falls back to fetch)
-function rpcRequest(action, payload = {}, timeout = 4000){
-  return new Promise((resolve, reject) => {
-    const id = `${Date.now()}-${Math.floor(Math.random()*9999)}`;
-    payload.action = action;
-    payload.id = id;
+ws.addEventListener('open', () => {
+  safeSend({ action: 'requestState' });
+});
 
-    // set timeout
-    const t = setTimeout(() => {
-      delete pendingRPC[id];
-      // fallback to HTTP if possible
-      httpFallback(action, payload).then(resolve).catch(reject);
-    }, timeout);
+ws.addEventListener('message', (ev) => {
+  let data;
+  try { data = JSON.parse(ev.data); } catch { return; }
+  if (!data || typeof data !== 'object') return;
 
-    pendingRPC[id] = {
-      resolve: (data) => { clearTimeout(t); delete pendingRPC[id]; resolve(data); },
-      reject: (err) => { clearTimeout(t); delete pendingRPC[id]; reject(err); },
-      timer: t
-    };
+  // registration results
+  if (data.type === 'register_result') {
+    if (data.ok) {
+      registeredWallet = data.wallet || (walletInput && walletInput.value) || null;
+      showToast('Registered successfully', 'success');
+      setRegisteredUI(registeredWallet);
+      setPlayEnabled(true);
+    } else {
+      const reason = data.reason || 'failed';
+      if (reason === 'not_holder') showToast('Not a holder — registration denied', 'error');
+      else showToast('Registration failed', 'error');
+      setPlayEnabled(false);
+    }
+    return;
+  }
 
-    // try websocket
-    try {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(payload));
-      } else {
-        // fallback now
-        clearTimeout(t);
-        delete pendingRPC[id];
-        httpFallback(action, payload).then(resolve).catch(reject);
+  // registration revoked (single or batch)
+  if (data.type === 'registration_revoked' || data.type === 'registration_revoked_batch') {
+    const removed = data.type === 'registration_revoked' ? [data.wallet] : (Array.isArray(data.wallets) ? data.wallets : []);
+    if (removed.includes(registeredWallet)) {
+      registeredWallet = null;
+      setRegisteredUI(null);
+      setPlayEnabled(false);
+      showToast('Your registration was removed — you no longer hold the token', 'error');
+    } else {
+      // if some other wallets removed, just rebuild state via state broadcast
+    }
+    return;
+  }
+
+  // spin direct result (when server responds)
+  if (data.type === 'spin_result') {
+    if (data.ok) {
+      pendingFinalReels = data.reels || null;
+      pendingResultText = data.result || 'Try Again';
+      // if reels are returned we stop reels (the current spin cycle will call stopReels)
+      // if we are not animating at the moment, show final straight away:
+      if (!isSpinning) {
+        stopReels(pendingFinalReels, pendingResultText);
+        pendingFinalReels = null;
+        pendingResultText = null;
       }
-    } catch (err) {
-      clearTimeout(t);
-      delete pendingRPC[id];
-      httpFallback(action, payload).then(resolve).catch(reject);
+    } else {
+      const reason = data.reason || 'error';
+      if (reason === 'not_registered') showToast('Wallet not registered — register to play', 'error');
+      else if (reason === 'not_holder') showToast('Not a holder — cannot play', 'error');
+      else showToast('Spin rejected: ' + reason, 'error');
     }
-  });
-}
-
-// very small HTTP fallback mapping: check-holder and register
-async function httpFallback(action, payload){
-  if (action === 'checkHolder') {
-    const wallet = encodeURIComponent(payload.wallet || '');
-    const r = await fetch(`/check-holder?wallet=${wallet}`);
-    if (!r.ok) throw new Error('http fallback failed');
-    return r.json();
+    return;
   }
-  if (action === 'register') {
-    const r = await fetch('/register', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ wallet: payload.wallet }) });
-    if (!r.ok) throw new Error('register failed');
-    return r.json();
-  }
-  if (action === 'requestPayout') {
-    const r = await fetch('/payout', { method:'POST' }).catch(()=>null);
-    if (!r) return { ok:false };
-    return r.json();
-  }
-  return { ok:false, reason:'no fallback' };
-}
 
-if (ws) {
-  ws.addEventListener('open', () => {
-    // request initial state
-    safeSend({ action: 'requestState' });
-  });
-
-  ws.addEventListener('message', (ev) => {
-    let data;
-    try { data = JSON.parse(ev.data); } catch { return; }
-    if (!data || typeof data !== 'object') return;
-
-    // RPC resolution
-    if (data.id && pendingRPC[data.id]) {
-      pendingRPC[data.id].resolve(data);
-      return;
+  // state broadcast (default)
+  if (data.type === 'state') {
+    if (typeof data.holders === 'number') holdersSpan && (holdersSpan.textContent = String(data.holders));
+    if (typeof data.jackpot === 'number' || typeof data.jackpot === 'string') {
+      const v = Number(data.jackpot || 0);
+      if (jackpotSpan) jackpotSpan.textContent = v.toFixed(4) + ' SOL';
     }
-
-    // state -> update UI
-    if (typeof data.holders === 'number') holdersSpan.textContent = data.holders;
-    if (typeof data.jackpot === 'number') jackpotSpan.textContent = data.jackpot.toFixed(4) + ' SOL';
-    if (typeof data.distributed === 'number' && distributedSpan) distributedSpan.textContent = data.distributed.toFixed(4) + ' SOL';
-
-    if (Array.isArray(data.leaderboard)) {
-      // reset then populate top10
-      leaderboardList.innerHTML = '';
-      for (let i = 0; i < 10; i++){
+    if (typeof data.distributedPrizes !== 'undefined') {
+      if (distributedSpan) distributedSpan.textContent = (Number(data.distributedPrizes || 0)).toFixed(4) + ' SOL';
+    }
+    // history
+    if (Array.isArray(data.history)) {
+      historyList && (historyList.innerHTML = '');
+      (data.history || []).forEach(h => {
         const li = document.createElement('li');
-        if (data.leaderboard[i]) {
-          const e = data.leaderboard[i];
-          li.textContent = `${i+1}. ${String(e.wallet||'—')} — ${Number(e.wins||0)} wins`;
-        } else li.textContent = `${i+1}. —`;
+        const amt = Number(h.amount || 0).toFixed(4);
+        const combo = h.combo || "Win";
+        li.innerHTML = `${h.wallet || '—'} — <strong>${amt} SOL</strong> <span style="opacity:0.85">(${combo})</span>`;
+        historyList && historyList.appendChild(li);
+      });
+    }
+    // leaderboard (pad to 10)
+    if (Array.isArray(data.leaderboard)) {
+      leaderboardList && (leaderboardList.innerHTML = '');
+      const arr = data.leaderboard.slice(0, 10);
+      for (let i=0;i<10;i++) {
+        const li = document.createElement('li');
+        if (arr[i]) li.textContent = `${i+1}. ${arr[i].wallet} — ${arr[i].pts} pts`;
+        else li.textContent = `${i+1}. —`;
         leaderboardList.appendChild(li);
       }
     }
-
-    if (Array.isArray(data.history) && historyList) {
-      historyList.innerHTML = '';
-      data.history.forEach(win => {
-        const li = document.createElement('li');
-        const amt = Number(win.amount ?? 0);
-        const sig = String(win.sig || '');
-        const wallet = String(win.wallet || '????');
-        const combo = win.combo || 'Win';
-        li.innerHTML = `${wallet} — <strong>${amt.toFixed(4)} SOL</strong> <span style="opacity:0.85">(${combo})</span> ${sig ? `<a href="https://solscan.io/tx/${sig}" target="_blank">[tx]</a>` : ''}`;
-        historyList.appendChild(li);
-      });
+    // round timer
+    if (data.round && data.round.end) {
+      payoutEndTs = Number(data.round.end) || null;
+      startPayoutTimer();
     }
-  });
+    return;
+  }
+});
 
-  ws.addEventListener('close', () => {
-    // attempt reconnect after a delay
-    setTimeout(()=> {
-      try { ws = new WebSocket(`${wsProto}://${wsHost}`); } catch {}
-    }, 4000);
-  });
-}
-
+// safe send helper
 function safeSend(obj){
   try {
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   } catch {}
 }
 
-// Basic reels UI creation
-for (let col = 0; col < 3; col++) {
-  const colDiv = document.createElement('div');
-  colDiv.classList.add('reel-col');
-  for (let row = 0; row < 3; row++) {
-    colDiv.appendChild(createSymbol(randomSymbol()));
+// UI helpers
+function showToast(msg, type='info', ttl=2800) {
+  let wrap = document.querySelector('.toast-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.className = 'toast-wrap';
+    document.body.appendChild(wrap);
   }
-  reelsContainer.appendChild(colDiv);
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type === 'error' ? 'err' : (type === 'success' ? 'success' : 'info'));
+  t.innerHTML = `<div>${msg}</div>`;
+  wrap.appendChild(t);
+  setTimeout(()=> {
+    t.style.opacity = '0';
+    setTimeout(()=> t.remove(), 420);
+  }, ttl);
 }
 
+function setRegisteredUI(wallet) {
+  if (registeredLine) registeredLine.textContent = wallet ? `Registered: ${wallet}` : 'Registered: —';
+}
+
+function setPlayEnabled(yes) {
+  if (!playBtn) return;
+  playBtn.disabled = !yes;
+  if (yes) playBtn.classList.remove('disabled'); else playBtn.classList.add('disabled');
+}
+
+// reels helpers
 function randomSymbol(){ return symbols[Math.floor(Math.random()*symbols.length)]; }
 function createSymbol(sym){
   const el = document.createElement('div');
   el.classList.add('reel-symbol');
-  if (sym === '7') el.classList.add('seven');
-  el.textContent = sym === '7' ? '7' : sym;
+  if (String(sym) === '7' || String(sym).toLowerCase().includes('7')) {
+    const img = document.createElement('img');
+    img.src = '/assets/seven.png';
+    img.alt = '7';
+    img.style.height = '56px';
+    img.style.objectFit = 'contain';
+    el.appendChild(img);
+    el.classList.add('seven');
+  } else {
+    el.textContent = sym;
+  }
   return el;
 }
 
-/* ---------- spin visuals ---------- */
+function buildReelsInitial(){
+  if (!reelsContainer) return;
+  reelsContainer.innerHTML = '';
+  for (let col=0; col<3; col++){
+    const colDiv = document.createElement('div');
+    colDiv.classList.add('reel-col');
+    for (let r=0; r<3; r++) colDiv.appendChild(createSymbol(randomSymbol()));
+    reelsContainer.appendChild(colDiv);
+  }
+}
+buildReelsInitial();
 
-function startReels(){
+function startReels() {
   const reelCols = document.querySelectorAll('.reel-col');
   reelCols.forEach((col, idx) => {
     reelIntervals[idx] = setInterval(() => {
       col.appendChild(createSymbol(randomSymbol()));
       if (col.children.length > 3) col.removeChild(col.firstChild);
-    }, 100);
+    }, 100 + idx*20);
   });
   isSpinning = true;
-  if (audioAllowed && spinSound) try{ spinSound.currentTime=0; spinSound.loop=true; spinSound.play().catch(()=>{}); } catch {}
+  // spin sound
+  try { if (spinSound && audioAllowed) { spinSound.currentTime = 0; spinSound.loop = true; spinSound.play().catch(()=>{}); } } catch {}
 }
 
 function stopReels(finalReels, resultText){
-  reelIntervals.forEach(clearInterval);
-  reelIntervals = [];
+  reelIntervals.forEach(clearInterval); reelIntervals = [];
   const reelCols = document.querySelectorAll('.reel-col');
-
   reelCols.forEach((col, idx) => {
     setTimeout(() => {
       if (finalReels && finalReels[idx]) {
         col.innerHTML = '';
         finalReels[idx].forEach(sym => col.appendChild(createSymbol(sym)));
       }
-      if (idx === 2) {
-        try { spinSound.pause(); spinSound.currentTime = 0; } catch {}
-        resultDiv.className = '';
-        resultDiv.textContent = resultText || 'Try Again';
-        if (resultText && /Jackpot/i.test(resultText)) resultDiv.classList.add('jackpot-win');
-        else if (resultText && /x3/.test(resultText)) resultDiv.classList.add('triple-win');
-        else if (resultText && /x2/.test(resultText)) resultDiv.classList.add('double-win');
-
-        if (resultText && resultText !== 'Try Again') celebrateWin(resultText);
+      if (idx === reelCols.length - 1) {
         isSpinning = false;
+        try { if (spinSound) { spinSound.pause(); spinSound.currentTime = 0; } } catch {}
+        // result
+        resultDiv && (resultDiv.textContent = resultText || 'Try Again');
+        if (resultText && resultText !== 'Try Again') {
+          // flash machine
+          const machine = document.querySelector('.machine-panel');
+          if (machine) { machine.classList.add('win-flash'); setTimeout(()=> machine.classList.remove('win-flash'), 1200); }
+          playResultSound(resultText);
+          // glow middle row
+          const cols = document.querySelectorAll('.reel-col');
+          cols.forEach(c => {
+            const mid = c.children[1];
+            if (mid) { mid.classList.add('win'); setTimeout(()=> mid.classList.remove('win'), 1200); }
+          });
+        }
       }
     }, idx * 300);
   });
 }
 
-/* ---------- celebration ---------- */
-function celebrateWin(result){
-  if (audioAllowed){
-    try {
-      if (/Jackpot/i.test(result)) jackpotWinSound.play().catch(()=>{});
-      else if (/x3/i.test(result)) bigWinSound.play().catch(()=>{});
-      else smallWinSound.play().catch(()=>{});
-    } catch {}
+// Play/Timer logic (client-side timer triggers server spin)
+let clientTimer = 10;
+let cycleState = 'timer'; // 'timer', 'spinning', 'result'
+function clientTick() {
+  if (cycleState !== 'timer') return;
+  // show clientTimer
+  if (timerDiv) timerDiv.textContent = String(clientTimer).padStart(2,'0');
+  clientTimer--;
+  if (clientTimer < 0) {
+    // start spin visually and ask server
+    startReels();
+    cycleState = 'spinning';
+    safeSend({ action: 'spin', wallet: registeredWallet });
+    // stop after fixed duration if server hasn't provided final reels
+    setTimeout(() => {
+      stopReels(pendingFinalReels, pendingResultText);
+      pendingFinalReels = null;
+      pendingResultText = null;
+      cycleState = 'result';
+      setTimeout(() => { cycleState = 'timer'; clientTimer = 10; }, 1400);
+    }, 3500);
   }
-  try { confetti({ particleCount: 120, spread: 90, origin:{y:0.7} }); } catch {}
 }
 
-/* ---------- payout timer ---------- */
-function formatMMSS(s){ const mm = Math.floor(s/60).toString().padStart(2,'0'); const ss = Math.floor(s%60).toString().padStart(2,'0'); return `${mm}:${ss}`; }
-
+// update payment countdown based on server round end (payoutEndTs)
 function startPayoutTimer(){
-  if (timerDiv) timerDiv.textContent = formatMMSS(payoutSeconds);
-  if (payoutTimerId) clearInterval(payoutTimerId);
-  payoutTimerId = setInterval(() => {
-    payoutSeconds -= 1;
-    if (timerDiv) timerDiv.textContent = formatMMSS(payoutSeconds);
-    if (payoutSeconds <= 0) {
-      // ask server to process payout
-      rpcRequest('requestPayout', {}).catch(()=>{});
-      payoutSeconds = 600;
-      if (timerDiv) timerDiv.textContent = formatMMSS(payoutSeconds);
-    }
-  }, 1000);
+  if (payoutInterval) clearInterval(payoutInterval);
+  payoutInterval = setInterval(()=> {
+    if (!payoutEndTs) { if (timerDiv) timerDiv.textContent = '00:00'; return; }
+    const diff = Math.max(0, Math.floor((payoutEndTs - Date.now()) / 1000));
+    const mm = Math.floor(diff / 60);
+    const ss = diff % 60;
+    if (timerDiv) timerDiv.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+  }, 500);
 }
 startPayoutTimer();
 
-/* ---------- registration logic ---------- */
-
-let registeredWallet = localStorage.getItem('registeredWallet') || null;
-let registeredIsHolder = false;
-
-function setRegisteredWallet(wallet){
-  registeredWallet = wallet ? String(wallet).trim() : null;
-  if (registeredWallet) {
-    localStorage.setItem('registeredWallet', registeredWallet);
-    registeredEl.textContent = registeredWallet;
-    playBtn.disabled = false;
-    playBtn.classList.remove('disabled');
-  } else {
-    localStorage.removeItem('registeredWallet');
-    registeredEl.textContent = '—';
-    playBtn.disabled = true;
-    playBtn.classList.add('disabled');
-  }
-}
-
-// disable play by default unless registered and holder
-setRegisteredWallet(registeredWallet);
-if (!registeredWallet) { playBtn.disabled = true; playBtn.classList.add('disabled'); }
-
-// check-holder RPC, used on register attempt and periodically to verify
-async function checkHolder(wallet){
-  if (!wallet) return { isHolder:false };
+// play sound depending on result string
+function playResultSound(resultText){
   try {
-    const resp = await rpcRequest('checkHolder', { wallet }, 3500);
-    // might be in nested object depending on server; accept {isHolder:bool} or {body:{isHolder}}
-    if (typeof resp.isHolder === 'boolean') return resp;
-    if (resp.body && typeof resp.body.isHolder === 'boolean') return resp.body;
-    // fallback: server might return directly
-    return { isHolder: !!resp.isHolder, balance: Number(resp.balance || 0) };
-  } catch (err) {
-    // try http fallback already handled inside rpcRequest
-    return { isHolder:false };
-  }
+    if (!audioAllowed) return;
+    const r = String(resultText || '').toLowerCase();
+    if (/jackpot|777/.test(r)) {
+      if (jackpotWinSound) jackpotWinSound.play().catch(()=>{});
+    } else if (/x3|3/.test(r) || /x3/i.test(r)) {
+      if (bigWinSound) bigWinSound.play().catch(()=>{});
+    } else if (/x2|2/.test(r)) {
+      if (smallWinSound) smallWinSound.play().catch(()=>{});
+    }
+  } catch {}
 }
 
-async function attemptRegister(wallet){
-  if (!wallet) { showToast('Enter wallet address', 'error'); return; }
-  showToast('Checking holder status...', 'info', 2000);
-  const chk = await checkHolder(wallet);
-  if (!chk.isHolder) {
-    showToast('Not a holder', 'error', 3500);
-    return;
-  }
-  // perform register rpc (server should record leaderboard registration)
-  try {
-    const res = await rpcRequest('register', { wallet }, 3500);
-    const ok = res?.success === true || (res.body && res.body.success === true);
-    if (ok) {
-      setRegisteredWallet(wallet);
-      registeredIsHolder = true;
-      showToast('Registered — good luck!', 'info', 3000);
-    } else {
-      const reason = res?.reason || (res.body && res.body.reason) || 'register failed';
-      showToast(String(reason), 'error', 3500);
-    }
-  } catch (err) {
-    showToast('Register failed', 'error', 3500);
-  }
+// UI events
+if (registerBtn) {
+  registerBtn.addEventListener('click', () => {
+    const w = (walletInput && walletInput.value) ? String(walletInput.value).trim() : null;
+    if (!w) { showToast('Enter a wallet address to register', 'error'); return; }
+    safeSend({ action: 'register', wallet: w });
+    showToast('Checking wallet...', 'info', 1200);
+  });
 }
 
-// wire register button
-registerBtn.addEventListener('click', async () => {
-  const wallet = walletInput.value?.trim();
-  await attemptRegister(wallet);
-});
+// disable play by default (until registration OK)
+setPlayEnabled(false);
 
-// periodic verification of registered wallet (every 30s)
-setInterval(async () => {
-  if (!registeredWallet) return;
-  const chk = await checkHolder(registeredWallet);
-  if (!chk.isHolder) {
-    // unregister and update UI + leaderboard
-    setRegisteredWallet(null);
-    registeredIsHolder = false;
-    showToast('Wallet no longer holds tokens — unregistered', 'error', 4500);
-    // remove from leaderboard if present
-    for (let li of Array.from(leaderboardList.children || [])) {
-      if (li.textContent.includes(registeredWallet)) {
-        li.textContent = li.textContent.replace(registeredWallet, '—');
-      }
-    }
-  } else {
-    registeredIsHolder = true;
-    // ensure play enabled
-    playBtn.disabled = false;
-    playBtn.classList.remove('disabled');
-  }
-}, 30_000);
+if (playBtn) {
+  playBtn.addEventListener('click', () => {
+    if (!registeredWallet) { showToast('Register a holder wallet to play', 'error'); return; }
+    audioAllowed = true;
+    try { if (backgroundSound) backgroundSound.play().catch(()=>{}); } catch {}
+    // trigger immediate spin via client timer
+    clientTimer = 0;
+    clientTick();
+  });
+}
 
-/* ---------- play button logic ---------- */
-playBtn.addEventListener('click', () => {
-  // only allow if registered and holder
-  if (!registeredWallet) { showToast('You must register a holder wallet to play', 'error'); return; }
-  if (!registeredIsHolder) { showToast('Not a holder — cannot play', 'error'); return; }
-  // allowed -> request spin
-  rpcRequest('requestSpin', {}).catch(()=>{});
-  startReels();
-  setTimeout(() => stopReels(null, 'Try Again'), 3500);
-});
+// small "auto timer" loop for clientTick (keeps local UI responsive; final result controlled by server)
+setInterval(clientTick, 1000);
 
-/* ---------- initialize leaderboard placeholders (top 10) ---------- */
-(function initPlaceholders(){
-  if (!leaderboardList) return;
-  leaderboardList.innerHTML = '';
-  for (let i = 0; i < 10; i++){
-    const li = document.createElement('li');
-    li.textContent = `${i+1}. —`;
-    leaderboardList.appendChild(li);
-  }
-})();
+// when ws opens we also requested state; but also handle initial enablement if server accepts later
 
+// initial local styling/UX
+setRegisteredUI(null);
+
+// Expose some helpers for debugging (optional)
+window._solo_debug = {
+  registeredSet: () => registeredWallet,
+  requestState: () => safeSend({ action: 'requestState' })
+};
