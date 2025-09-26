@@ -1,3 +1,6 @@
+let audioAllowed = false;
+let isRegistered = false;
+let currentWallet = null;
 // public/script.js
 // Main client logic for Casino Royale
 (function(){
@@ -285,6 +288,7 @@
 
   // play button -> only allowed if registeredWallet set
   if (playBtn) playBtn.addEventListener('click', () => {
+  if (!isRegistered) { showToast('Please register a wallet first'); return; }
     if (!registeredWallet) { showToast('You must register a holder wallet first', 'error'); enablePlay(false); return; }
     if (!ws || ws.readyState !== WebSocket.OPEN) { showToast('Server disconnected', 'error'); return; }
     // send spin request; the server should respond with spin_result message type
@@ -344,3 +348,23 @@
   });
 
 })();
+
+
+function setPlayEnabled(enabled) {
+  if (typeof playBtn === 'undefined' || !playBtn) return;
+  playBtn.disabled = !enabled;
+  if (enabled) playBtn.classList.remove('disabled');
+  else playBtn.classList.add('disabled');
+}
+
+function showToast(text, ttl=3000) {
+  try {
+    let wrap = document.querySelector('.toast-wrap');
+    if (!wrap) { wrap = document.createElement('div'); wrap.className='toast-wrap'; document.body.appendChild(wrap); }
+    const t = document.createElement('div'); t.className='toast'; t.textContent = text;
+    wrap.appendChild(t);
+    setTimeout(()=> { t.style.opacity='0'; setTimeout(()=>t.remove(),400); }, ttl);
+  } catch(e){ console.warn(e); }
+}
+
+setPlayEnabled(false);

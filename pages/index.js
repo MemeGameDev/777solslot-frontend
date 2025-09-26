@@ -35,7 +35,7 @@ export default function Home() {
             <button id="register-btn" className="btn small">Register</button>
             <div className="registered-line">
               <div className="register-instruction" style={{ maxWidth: 320 }}>
-                To play you have to register the wallet you bought with. (Necessary step for leaderboard purposes)
+                
               </div>
               Registered: <span id="registered-wallet">—</span>
             </div>
