@@ -38,9 +38,20 @@ function shortAddr(a){ if(!a) return '????'; return a.slice(0,6) + '…' + a.sli
 function safeSend(obj){ try{ if(ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); }catch(e){} }
 function formatSol(v){ const n = Number(v || 0); return n.toFixed(3) + ' SOL'; }
 
+function toEmojiSymbol(sym){
+  if (!sym) return sym;
+  const s = String(sym).toUpperCase();
+  if (s === 'CHERRY' || s === '🍒') return '🍒';
+  if (s === 'LEMON' || s === '🍋') return '🍋';
+  if (s === 'GRAPE' || s === '🍇') return '🍇';
+  if (s.includes('7')) return '7';
+  return sym;
+}
+
+
 // 7 as image
 (function createSymbolOverride(){
-  window.createSymbol = function(sym){
+  window.createSymbol = function(sym){ sym = toEmojiSymbol(sym);
     const el = document.createElement('div');
     el.className = 'reel-symbol';
     if (sym === '7' || String(sym).toLowerCase().includes('7')) {
@@ -97,8 +108,8 @@ function onWsMessage(ev) {
   if (typeof data.holders === 'number' && holdersSpan) holdersSpan.textContent = data.holders;
 
   // jackpot / distributed
-  if (typeof data.jackpot === 'number' && jackpotSpan) jackpotSpan.textContent = formatSol(data.jackpot);
-  if (typeof data.distributedPrizes === 'number' && distributedEl) distributedEl.textContent = formatSol(data.distributedPrizes);
+  if (jackpotSpan) jackpotSpan.textContent = formatSol(data.jackpot || 0);
+  if (distributedEl) distributedEl.textContent = formatSol(data.distributedPrizes || 0);
 
   // leaderboard top 10
   if (Array.isArray(data.leaderboard) && leaderboardList) renderLeaderboard(data.leaderboard);
