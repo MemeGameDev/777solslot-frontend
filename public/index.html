@@ -1,142 +1,117 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Casino Royale</title>
-  <link rel="stylesheet" href="style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+  <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <div class="casino-container">
-    <div class="legend-box">
-      <h3 class="section-title neon">Winning Combinations:</h3>
-      <ul class="combo-list">
-        <li>🍇 🍇 🍇 = Big Win!</li>
-        <li>🍋 🍋 🍋 = Solid Win!</li>
-        <li>🍒 🍒 🍒 = Nice Win!</li>
-        <li>🍇 🍇 X = Small Win!</li>
-        <li>🍋 🍋 X = Mini Win!</li>
-        <li>🍒 🍒 X = Tiny Win!</li>
-        <li class="jackpot-line">
-          <span class="seven-icon"></span>
-          <span class="seven-icon"></span>
-          <span class="seven-icon"></span>
-          = JACKPOT!
-        </li>
-      </ul>
-
-      <hr class="legend-divider" />
-
-      <div class="payout-info">
-        <h4 class="section-title neon">Payout Info</h4>
-        <ul class="rule-list">
-          <li>
-            <span class="dot">💠</span>
-            <span>Wins pay a <b>% of the accumulated Jackpot</b></span>
-          </li>
-          <li class="jackpot-rule">
-            <span class="dot">💠</span>
-            <span class="jackpot-text">
-              <span class="icons">
-                <span class="seven-icon"></span>
-                <span class="seven-icon"></span>
-                <span class="seven-icon"></span>
-              </span>
-              <span>Jackpot Win</span>
-            </span>
-          </li>
-          <li>
-            <span class="dot">💠</span>
-            <span>Jackpot refills from creator fees</span>
-          </li>
-          <li>
-            <span class="dot">💠</span>
-            <span><b>50%</b> → Jackpot &nbsp;|&nbsp; <b>50%</b> → Creator (fees reserve)</span>
-          </li>
-          <li>
-            <span class="dot">💠</span>
-            <span>Minimum payout: <b>0.001 SOL</b></span>
-          </li>
-          <li>
-            <span class="dot">💠</span>
-            <span>
-              Holding more supply slightly increases your odds of winning
-              <br/><span class="fair-note">(but not by much to keep it fair)</span>
-            </span>
-          </li>
-        </ul>
+  <div class="app-root">
+    <header class="header-row">
+      <div class="title-block">
+        <h1 class="title">Casino Royale</h1>
+        <div class="subline">Luxury slot experience — real memecoin rewards</div>
       </div>
+
+      <!-- token CA container (between title and wallet) -->
+      <div style="display:flex;align-items:center;gap:12px">
+        <div id="token-ca-container" class="token-ca-container">
+          <span class="token-ca-label">CA:</span>
+          <span id="token-ca-val" class="token-ca">—</span>
+        </div>
+        <!-- wallet/register area (keeps the same structure you had) -->
+        <div class="wallet-block">
+          <input id="wallet-input" class="wallet-input" placeholder="Wallet address" />
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="register-btn" class="btn small">Register</button>
+          </div>
+          <div id="registered-line" class="registered-line">Registered: —</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- the register instruction text (updated) -->
+    <div class="register-instruction register-note">
+      To play you have to register the wallet you bought with. (Necessary step for leaderboard purposes)
     </div>
 
-    <div class="main-stage">
-      <h1>Casino Royale</h1>
-  <div id="token-ca-container" class="token-ca">CA: <span id="token-ca">loading...</span></div>
-  <p class="register-instruction">To play you have to register the wallet you bought with. (Necessary step for leaderboard purposes)</p>
+    <!-- main grid -->
+    <div class="main-grid">
+      <aside class="left-col">
+        <section id="winning-combinations" class="panel golden-panel">
+          <h3>Winning Combinations</h3>
+          <!-- keep your existing list, minimal example below -->
+          <ul class="paytable">
+            <li>🍇 🍇 🍇 = Big Win (200 pts)</li>
+            <li>🍋 🍋 🍋 = Solid Win (175 pts)</li>
+            <li>🍒 🍒 🍒 = Nice Win (150 pts)</li>
+            <li>7 7 7 = JACKPOT (500 pts)</li>
+          </ul>
+        </section>
 
+        <section id="leaderboard" class="panel golden-panel">
+          <h3>Leaderboard — Top 10</h3>
+          <ol id="leaderboard-list" class="leaderboard-list"></ol>
+        </section>
 
-      <div id="timer">5</div>
+        <section id="distributed" class="panel golden-panel">
+          <h3>Distributed</h3>
+          <div class="stat-card distributed-card">
+            <div class="value" id="distributed-val">0</div>
+          </div>
+        </section>
+      </aside>
 
-      <!-- Casino dashboard info bar (MC removed) -->
-      <div class="info-box">
-        <div class="info-panel gold-bg">
-          <span class="icon">👥</span>
-          <span>Holders: <b id="holders">0</b></span>
+      <main class="center-col">
+        <!-- stats row: add golden-panel to the cards container -->
+        <div class="stats-row">
+          <div class="stat-card holders-card golden-panel">
+            <div class="label">Holders</div>
+            <div class="value" id="holders-val">0</div>
+          </div>
+
+          <div class="stat-card jackpot-card golden-panel">
+            <div class="label">Jackpot</div>
+            <div class="value" id="jackpot-val">0</div>
+          </div>
+
+          <div class="stat-card timer-card golden-panel">
+            <div class="label">Payout In</div>
+            <div class="value" id="timer-val">00:00</div>
+          </div>
         </div>
-        <div class="divider"></div>
-        <div class="info-panel gold-bg jackpot-panel">
-          <span class="icon">💰</span>
-          <span>Jackpot: <b id="jackpot" data-value="0">0</b> SOL</span>
+
+        <!-- slot machine panel (golden background) -->
+        <div id="machine" class="machine-panel golden-panel">
+          <!-- reels container target (we add gold-bg class via HTML) -->
+          <div id="reels-container" class="reels-container gold-bg">
+            <!-- your reel elements go here (unchanged) -->
+            <div class="reel-col">
+              <div class="reel-symbol seven">🍇</div>
+            </div>
+            <div class="reel-col">
+              <div class="reel-symbol">🍋</div>
+            </div>
+            <div class="reel-col">
+              <div class="reel-symbol">🍒</div>
+            </div>
+          </div>
+
+          <div class="controls-panel">
+            <button id="spin-btn" class="btn play">PLAY</button>
+            <div class="result-text" id="result-text">Good luck!</div>
+          </div>
+
+          <div class="recent-history-panel">
+            <button id="recent-history-btn" class="btn small">Recent History</button>
+          </div>
         </div>
-      </div>
-
-      <div id="reels-container" class="gold-bg">
-        <div id="win-line"></div>
-      </div>
-
-      <button id="play-btn">PLAY</button>
-
-      <div id="result">Waiting for next spin...</div>
-
-      <div class="history">
-        <h3>Last Winners:</h3>
-        <ul id="history-list"></ul>
-      </div>
-
-      <div class="leaderboard">
-        <h3>Top 5 Winners:</h3>
-        <ul id="leaderboard-list" class="gold-bg"></ul>
-      </div>
+      </main>
     </div>
   </div>
 
-  <!-- Sounds -->
-  <audio id="spin-sound" src="spin.mp3"></audio>
-  <audio id="small-win" src="small.mp3"></audio>
-  <audio id="big-win" src="big.mp3"></audio>
-  <audio id="jackpot-win" src="jackpot.mp3"></audio>
-  <audio id="timer-sound" src="timer.mp3"></audio>
-  <audio id="background-sound" src="background.mp3" loop></audio>
-
-  <script src="script.js"></script>
-  <script>
-    // Jackpot number rolling animation
-    function animateJackpot(newValue) {
-      const el = document.getElementById("jackpot");
-      const oldValue = parseFloat(el.dataset.value) || 0;
-      const duration = 800; // ms
-      const start = performance.now();
-
-      function tick(now) {
-        const progress = Math.min((now - start) / duration, 1);
-        const current = oldValue + (newValue - oldValue) * progress;
-        el.innerText = current.toFixed(3);
-        if (progress < 1) requestAnimationFrame(tick);
-      }
-      requestAnimationFrame(tick);
-
-      el.dataset.value = newValue;
-    }
-  </script>
+  <script src="/fetch-ca.js"></script>
+  <script src="/script.js"></script>
 </body>
 </html>

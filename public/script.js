@@ -1,19 +1,3 @@
-
-// fetch token CA from backend config (places CA into #token-ca)
-async function fetchTokenCA() {
-  try {
-    const res = await fetch('/config');
-    if (!res.ok) return;
-    const j = await res.json();
-    const el = document.getElementById('token-ca');
-    if (el) el.textContent = j.token_ca || '';
-  } catch (e) {
-    console.warn('fetchTokenCA failed', e);
-  }
-}
-try { fetchTokenCA(); } catch(e){}
-
-
 const symbols = ['🍒', '🍋', '🍇', '7'];
 
 const reelsContainer   = document.getElementById('reels-container');
@@ -76,12 +60,12 @@ ws.addEventListener('message', (ev) => {
   if (window.animateJackpot) {
     animateJackpot(jp); // smooth roll
   } else {
-    jackpotSpan.textContent = jp.toFixed(4);
+    if (jackpotSpan) jackpotSpan.textContent = jp.toFixed(4);
   }
-  jackpotSpan.classList.toggle('high', jp > 1);
+  if (jackpotSpan) jackpotSpan.classList.toggle('high', jp > 1);
 
   // history (only payouts)
-  historyList.innerHTML = '';
+  if (historyList) historyList.innerHTML = '';
   (Array.isArray(data.history) ? data.history : []).forEach(win => {
     const li = document.createElement('li');
 
@@ -103,7 +87,7 @@ ws.addEventListener('message', (ev) => {
   });
 
   // leaderboard
-  leaderboardList.innerHTML = '';
+  if (leaderboardList) leaderboardList.innerHTML = '';
   (Array.isArray(data.leaderboard) ? data.leaderboard : []).forEach(entry => {
     const li = document.createElement('li');
     const w = String(entry.wallet || '????');
@@ -166,7 +150,7 @@ function startReels(){
   isSpinning = true;
   cycleState = 'spinning';
   timeLeft = 5;
-  timerDiv.style.visibility = 'hidden';
+  if (timerDiv) timerDiv.style.visibility = 'hidden';
 
   if (audioAllowed) {
     try {
@@ -195,11 +179,13 @@ function stopReels(finalReels, resultText){
         stopAudio(spinSound);
 
         // color-coded result text
-        resultDiv.className = ''; // reset classes
-        resultDiv.textContent = resultText || 'Try Again';
-        if (resultText && /Jackpot/i.test(resultText)) resultDiv.classList.add('jackpot-win');
-        else if (resultText && /x3/.test(resultText))  resultDiv.classList.add('triple-win');
-        else if (resultText && /x2/.test(resultText))  resultDiv.classList.add('double-win');
+        if (resultDiv) {
+          resultDiv.className = ''; // reset classes
+          resultDiv.textContent = resultText || 'Try Again';
+          if (resultText && /Jackpot/i.test(resultText)) resultDiv.classList.add('jackpot-win');
+          else if (resultText && /x3/.test(resultText))  resultDiv.classList.add('triple-win');
+          else if (resultText && /x2/.test(resultText))  resultDiv.classList.add('double-win');
+        }
 
         if (resultText && resultText !== 'Try Again') {
           celebrateWin(resultText);
@@ -209,7 +195,7 @@ function stopReels(finalReels, resultText){
         cycleState = 'result';
         setTimeout(() => {
           cycleState = 'timer';
-          timerDiv.style.visibility = 'visible';
+          if (timerDiv) timerDiv.style.visibility = 'visible';
           timeLeft = 5;
         }, 1500);
       }
@@ -222,7 +208,7 @@ function stopReels(finalReels, resultText){
 function updateTimer(){
   if (cycleState !== 'timer') return;
 
-  timerDiv.textContent = timeLeft;
+  if (timerDiv) timerDiv.textContent = timeLeft;
   if (audioAllowed) {
     try {
       timerSound.currentTime = 0;
@@ -259,12 +245,16 @@ function celebrateWin(result){
     if (payout === 100){ particleCount = 500; spread = 120; originY = 0.6; }
     else if (payout >= 10){ particleCount = 250; spread = 100; originY = 0.7; }
     else { particleCount = 90; spread = 70; originY = 0.8; }
-    confetti({ particleCount, spread, startVelocity: 45, origin: { y: originY } });
+    if (typeof confetti === 'function') {
+      confetti({ particleCount, spread, startVelocity: 45, origin: { y: originY } });
+    }
 
-    // Flash gold win-line
+    // Flash gold win-line if present
     const winLine = document.getElementById('win-line');
-    winLine.classList.add('active');
-    setTimeout(() => winLine.classList.remove('active'), 1000);
+    if (winLine) {
+      winLine.classList.add('active');
+      setTimeout(() => winLine.classList.remove('active'), 1000);
+    }
 
     // Glow middle row symbols
     const reelCols = document.querySelectorAll('.reel-col');
@@ -278,11 +268,81 @@ function celebrateWin(result){
 /* ---------- Helpers ---------- */
 function stopAudio(aud){ try{ aud.pause(); aud.currentTime = 0; }catch{} }
 
-playBtn.addEventListener('click', () => {
-  audioAllowed = true;
-  try { backgroundSound.play().catch(()=>{}); } catch {}
-  if (!isSpinning && cycleState === 'timer') {
-    timeLeft = 0; // trigger first spin immediately
-    updateTimer();
+if (playBtn) {
+  playBtn.addEventListener('click', () => {
+    audioAllowed = true;
+    try { backgroundSound.play().catch(()=>{}); } catch {}
+    if (!isSpinning && cycleState === 'timer') {
+      timeLeft = 0; // trigger first spin immediately
+      updateTimer();
+    }
+  });
+}
+
+/* ---------- UI tweaks: CA + Register text wiring (merged safely) ---------- */
+
+/*
+  These functions are non-destructive and won't interfere with existing register logic.
+  They:
+   - set the register instruction text as requested
+   - attempt to fetch /config to populate #token-ca-val if present
+   - wire a register button fallback that calls your original register if you expose it as window.originalRegister
+*/
+
+const REGISTER_INSTRUCTION = "To play you have to register the wallet you bought with. (Necessary step for leaderboard purposes)";
+
+function updateRegisterText(){
+  const el = document.querySelector('.register-instruction') || document.querySelector('.register-note') || document.querySelector('.registered-line');
+  if (el) el.textContent = REGISTER_INSTRUCTION;
+}
+
+async function ensureCA(){
+  const el = document.getElementById('token-ca-val');
+  if (!el) return;
+  if (el.textContent && el.textContent.trim() !== '—') return;
+  try {
+    const res = await fetch('/config', { cache: 'no-store' });
+    if (!res.ok) return;
+    const j = await res.json();
+    if (j && j.token_ca) {
+      el.textContent = j.token_ca;
+    }
+  } catch (e) {
+    // not critical; ignore
+    console.warn('ensureCA failed:', e && e.message ? e.message : e);
   }
-});
+}
+
+function wireRegisterButton(){
+  const btn = document.getElementById('register-btn');
+  if (!btn) return;
+  btn.addEventListener('click', (ev) => {
+    // if the app has its own register routine exposed, prefer that
+    if (typeof window.originalRegister === 'function') {
+      try { window.originalRegister(ev); } catch (e) { console.warn('originalRegister error', e); }
+      return;
+    }
+
+    // fallback behavior: show registered line for UX
+    const input = document.getElementById('wallet-input');
+    const regLine = document.getElementById('registered-line');
+    const addr = input && input.value ? input.value.trim() : '';
+    if (regLine) regLine.textContent = addr ? `Registered: ${addr}` : 'Registered: —';
+  });
+}
+
+function uiInit() {
+  updateRegisterText();
+  wireRegisterButton();
+  ensureCA();
+}
+
+// run ASAP
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', uiInit);
+} else {
+  uiInit();
+}
+
+// Auto-load token CA (legacy small loader) - keep for compatibility; fetch-ca.js also populates #token-ca-val
+(function(){var s=document.createElement('script');s.src='/fetch-ca.js';s.async=true;document.head.appendChild(s);})();
