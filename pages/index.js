@@ -1,4 +1,3 @@
-// frontend/pages/index.js
 import Head from "next/head";
 import Script from "next/script";
 
@@ -8,7 +7,7 @@ export default function Home() {
       <Head>
         <title>Casino Royale</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* Expose backend at runtime too (for fetch-ca.js fallback) */}
+        {/* Let fetch-ca.js read the backend origin at runtime */}
         <meta
           name="backend-origin"
           content={process.env.NEXT_PUBLIC_BACKEND_ORIGIN || ""}
@@ -16,19 +15,20 @@ export default function Home() {
         <link rel="stylesheet" href="/style.css" />
       </Head>
 
-      {/* Backend origin + default round seconds (runtime, not baked only) */}
+      {/* Expose backend origin as globals before any client scripts run */}
       <Script id="backend-origin" strategy="beforeInteractive">{`
         (function () {
-          var o = "${process.env.NEXT_PUBLIC_BACKEND_ORIGIN || ""}".replace(/\\/+\$/,'');
-          // set multiple globals so any client script can pick it up
-          window.BACKEND_ORIGIN = o;
-          window.NEXT_PUBLIC_BACKEND_ORIGIN = o;
-          window.__BACKEND_ORIGIN = o;
-          window.DEFAULT_ROUND_SECS = 600;
+          try {
+            var o = "${process.env.NEXT_PUBLIC_BACKEND_ORIGIN || ""}";
+            if (o) { o = o.replace(/\\/+$/,''); }
+            window.BACKEND_ORIGIN = o;
+            window.NEXT_PUBLIC_BACKEND_ORIGIN = o;
+            window.__BACKEND_ORIGIN = o;
+          } catch (e) {}
         })();
       `}</Script>
 
-      {/* fetch token CA + round info from backend */}
+      {/* Fetch CA from backend and keep it fresh */}
       <Script src="/fetch-ca.js" strategy="afterInteractive" />
 
       <div className="app-root">
@@ -39,11 +39,12 @@ export default function Home() {
             <div className="subline">Luxury slot experience — real rewards</div>
           </div>
 
-          {/* CENTER: CA */}
+          {/* CENTER: CA box */}
           <div className="header-mid">
             <div id="token-ca-container" className="token-ca-container">
               <span className="token-ca-label">CA:</span>
-              <span id="token-ca-val" className="token-ca">—</span>
+              {/* Mark this element so fetch-ca.js can't miss it */}
+              <span id="token-ca-val" className="token-ca" data-ca-target="true">—</span>
             </div>
           </div>
 
@@ -61,7 +62,6 @@ export default function Home() {
 
         {/* main grid */}
         <div className="main-grid">
-
           {/* LEFT */}
           <aside className="left-col">
             <section id="winning-combinations" className="panel golden-panel">
@@ -100,7 +100,6 @@ export default function Home() {
 
           {/* CENTER */}
           <main className="center-col">
-            {/* stats row */}
             <div className="stats-row">
               <div className="stat-card holders-card golden-panel">
                 <div className="label">Holders</div>
@@ -123,19 +122,15 @@ export default function Home() {
               </div>
             </div>
 
-            {/* slot machine panel */}
+            {/* slot machine */}
             <div id="machine" className="machine-panel golden-panel">
-              <div id="reels-container" className="reels-container gold-bg">
-                {/* script.js builds the reels */}
-              </div>
-
+              <div id="reels-container" className="reels-container gold-bg"></div>
               <div className="controls-panel">
                 <button id="spin-btn" className="btn play">PLAY</button>
                 <div className="result-text" id="result-text">Good luck!</div>
               </div>
             </div>
 
-            {/* register note placed below the slot machine */}
             <div className="register-instruction register-note">
               Register a holder&apos;s wallet to unlock the play button (necessary for the leaderboard)
             </div>
@@ -149,7 +144,6 @@ export default function Home() {
             <audio id="background-sound" src="/assets/background.mp3" preload="auto" loop></audio>
           </main>
 
-          {/* RIGHT (optional) */}
           <aside className="right-col"></aside>
         </div>
       </div>
