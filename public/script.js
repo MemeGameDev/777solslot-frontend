@@ -209,6 +209,7 @@ function stopReels(finalReels, resultText){
   if (spinSound) { try { spinSound.pause(); spinSound.currentTime = 0; } catch {} }
   if (resultDiv && resultText) resultDiv.textContent = String(resultText);
   playWinSfx(resultText);
+  if (playBtn && canPlay) { try { playBtn.disabled = false; } catch {} }
 }
 
 // ---- Countdown ----
@@ -258,6 +259,8 @@ if (playBtn) {
       toast('You must register a holder wallet to play');
       return;
     }
+    if (isSpinning) { return; }
+    if (playBtn) playBtn.disabled = true;
     startReels();
     startBackgroundLoopOnce();
     safeSend({ action: 'spin', wallet: registeredWallet });
