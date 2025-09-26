@@ -35,34 +35,17 @@ let pendingFinalReels = null;
 let pendingResultText = null;
 
 let ws = null;
-// WS init — use explicit backend if provided
 (function initWebSocket(){
   try {
-    // prefer explicit WS endpoint (BACKEND_WS),
-    // then derive WS from BACKEND_URL (http->ws, https->wss),
-    // fallback to same-origin (previous behavior).
-    const explicitWs = window.BACKEND_WS || null;
-    const backendUrl = (window.BACKEND_URL || '').replace(/\/$/, '');
-
-    let wsUrl;
-    if (explicitWs) {
-      wsUrl = explicitWs.replace(/\/$/, '');
-    } else if (backendUrl) {
-      wsUrl = backendUrl.replace(/^http/, (m) => m === 'http' ? 'ws' : 'wss');
-    } else {
-      const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-      wsUrl = `${wsProto}://${location.host}`;
-    }
-
-    console.info('WebSocket connecting to', wsUrl);
-    ws = new WebSocket(wsUrl);
+    const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${wsProto}://${location.host}`);
     ws.addEventListener('open', () => {
       try { ws.send(JSON.stringify({ action: 'requestState' })); } catch {}
     });
     ws.addEventListener('message', onWsMessage);
-    ws.addEventListener('close', ()=>{ console.warn('ws closed', wsUrl); });
+    ws.addEventListener('close', ()=>{ console.warn('ws closed') });
     ws.addEventListener('error', (e) => console.warn('ws error', e));
-  } catch(e){ console.warn('ws init failed', e); }
+  } catch(e){ console.warn('ws init failed', e) }
 })();
 
 function shortAddr(a){ if(!a) return '????'; return a.slice(0,6) + '…' + a.slice(-4); }
@@ -158,6 +141,24 @@ function onWsMessage(ev) {
   }
 }
 
+
+  if (data.type === 'can_play') {
+    if (!data.ok) {
+      canPlay = false;
+      if (playBtn) playBtn.disabled = true;
+      // Optional toast
+      try {
+        const t = document.createElement('div');
+        t.className = 'toast';
+        t.textContent = 'You are no longer a holder — re-buy and register again to play.';
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), 2200);
+      } catch {}
+    } else {
+      canPlay = true;
+      if (playBtn) playBtn.disabled = false;
+    }
+  }
 /* ---------- Reel visuals ---------- */
 
 function randomSymbol(){ return symbols[Math.floor(Math.random()*symbols.length)]; }
@@ -217,9 +218,8 @@ setInterval(()=> {
   clientTimer--;
   if (clientTimer < 0) {
     // ask server to spin (if allowed) - server will reply with spin result
-    startReels();
-    safeSend({ action: 'requestSpin' });
-    // stop after a fixed time if server hasn't returned final reels
+    // auto-spin disabled; wait for Play button
+// stop after a fixed time if server hasn't returned final reels
     setTimeout(()=> {
       stopReels(pendingFinalReels, pendingResultText || 'Try Again');
       pendingFinalReels = null; pendingResultText = null;
@@ -305,21 +305,11 @@ enablePlay(true);
 // When play button clicked, trigger spin request (if allowed)
 if (playBtn) {
   playBtn.addEventListener('click', () => {
-    if (!canPlay) {
-      // small UI hint
-      const t = document.createElement('div');
-      t.className = 'toast';
-      t.textContent = 'You must register a holder wallet to play';
-      document.body.appendChild(t);
-      setTimeout(()=> t.remove(), 2200);
-      return;
-    }
-    audioAllowed = true;
-    try { if (backgroundSound) backgroundSound.play().catch(()=>{}); } catch {}
+      if (canPlay) { startReels(); safeSend({ action: 'spin', wallet: registeredWallet }); }
+}); } catch {}
     // start visual reels and ask server for spin
-    startReels();
-    safeSend({ action: 'requestSpin' });
-    setTimeout(()=> {
+    // auto-spin disabled; wait for Play button
+setTimeout(()=> {
       stopReels(pendingFinalReels, pendingResultText || 'Try Again');
       pendingFinalReels = null; pendingResultText = null;
     }, 3500);
