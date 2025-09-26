@@ -1,61 +1,68 @@
 // public/fetch-ca.js
-// Fetch /config from backend (tries same-origin first). If not found, uses meta[name="backend-url"] or window.BACKEND_URL as fallback.
-// Sets window.APP_CONFIG and dispatches 'next_payout_ready' for the UI to pick up.
+// Responsible for obtaining token CA and minimal config from the backend.
 
-(async function ensureCA(){
-  try {
-    const tryPaths = [
-      () => fetch('/config', { credentials: 'same-origin' }),
-      // If a backend url meta tag or global exists, try that as well.
-      () => {
-        const meta = document.querySelector('meta[name="backend-url"]');
-        const backend = (meta && meta.content) ? meta.content : (window.BACKEND_URL || '');
-        if (!backend) return Promise.reject(new Error('no backend configured'));
-        // ensure no trailing slash
-        const base = backend.replace(/\/+$/, '');
-        return fetch(base + '/config', { mode: 'cors' });
-      }
-    ];
+(function () {
+  const FALLBACK_PUBLIC_BACKEND = ''; // optional: put a stable public backend if you have one
+  const LOCAL_BACKEND = 'http://localhost:8080';
 
-    let res = null;
-    for (const fn of tryPaths) {
-      try {
-        res = await fn();
-        if (res && (res.status === 200 || res.status === 201)) break;
-      } catch (e) {
-        res = null;
-      }
-    }
-
-    if (!res || !res.ok) {
-      throw new Error('no config');
-    }
-
-    const data = await res.json();
+  function setTokenCA(ca) {
+    if (!ca) return;
+    window.TOKEN_CA = ca;
+    const el = document.getElementById('token-ca-val');
+    if (el) el.textContent = ca;
     window.APP_CONFIG = window.APP_CONFIG || {};
-    if (data.token_ca) {
-      window.APP_CONFIG.token_ca = data.token_ca;
-      window.TOKEN_CA = data.token_ca;
-    }
-    if (data.nextPayout) window.APP_CONFIG.nextPayout = Number(data.nextPayout);
-    // expose backend url for client-side actions if we used fallback backend
+    window.APP_CONFIG.token_ca = ca;
+    try { window.dispatchEvent(new CustomEvent('token_ca_ready', { detail: { token_ca: ca } })); } catch (e) {}
+  }
+
+  async function tryFetchConfig(url) {
     try {
-      const meta = document.querySelector('meta[name="backend-url"]');
-      if (meta && meta.content) window.BACKEND_URL = meta.content;
-    } catch(e){}
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) return { ok: false, status: r.status };
+      const j = await r.json();
+      return { ok: true, json: j };
+    } catch (err) {
+      return { ok: false, error: err };
+    }
+  }
 
-    // Set token text in DOM if present
-    const tokenEl = document.getElementById('token-ca-val');
-    if (tokenEl && window.APP_CONFIG.token_ca) tokenEl.textContent = window.APP_CONFIG.token_ca;
+  async function ensureCA() {
+    const tries = [];
+    tries.push(location.origin + '/config');
+    if (window.BACKEND_URL && typeof window.BACKEND_URL === 'string') {
+      tries.push(window.BACKEND_URL.replace(/\/$/, '') + '/config');
+    }
+    if (FALLBACK_PUBLIC_BACKEND) tries.push(FALLBACK_PUBLIC_BACKEND.replace(/\/$/, '') + '/config');
+    tries.push(LOCAL_BACKEND + '/config');
 
-    // Fire event so scripts can start countdowns
-    window.dispatchEvent(new CustomEvent('next_payout_ready', { detail: { nextPayout: window.APP_CONFIG.nextPayout } }));
+    let lastErr = null;
+    for (const url of tries) {
+      try {
+        const result = await tryFetchConfig(url);
+        if (result.ok && result.json) {
+          const cfg = result.json;
+          window.APP_CONFIG = Object.assign(window.APP_CONFIG || {}, cfg);
+          if (cfg.token_ca) setTokenCA(cfg.token_ca);
+          // If server provided nextPayout timestamp, notify
+          if (cfg.nextPayout) {
+            try { window.dispatchEvent(new CustomEvent('next_payout_ready', { detail: { nextPayout: cfg.nextPayout } })); } catch (e) {}
+          }
+          return cfg;
+        } else {
+          lastErr = result;
+        }
+      } catch (e) {
+        lastErr = e;
+      }
+    }
 
-  } catch (err) {
-    // Quietly log and set APP_CONFIG empty so other scripts can still check
-    console.warn('fetch-ca: failed to load /config', err && err.message ? err.message : err);
-    window.APP_CONFIG = window.APP_CONFIG || {};
-    // Dispatch event indicating there's no payout info (so UI can fallback)
-    window.dispatchEvent(new CustomEvent('next_payout_ready', { detail: { nextPayout: null } }));
+    console.error('fetch-ca: failed to load /config', lastErr);
+    return null;
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', ensureCA);
+  } else {
+    ensureCA();
   }
 })();

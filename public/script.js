@@ -1,398 +1,346 @@
 // public/script.js
-// Combined, cleaned-up client script:
-// - disables Play until registered (and holder).
-// - registers via ws, handles register_result / registration_revoked.
-// - uses assets/seven.png for the "7" symbol.
-// - displays toasts, handles spin_result and state updates.
+// Main client logic for Casino Royale
+(function(){
+  // helper
+  function $(id){ return document.getElementById(id); }
+  function make(tag, cls){ const e = document.createElement(tag); if (cls) e.className = cls; return e; }
 
-const symbols = ['🍒', '🍋', '🍇', '7'];
+  // DOM refs
+  const reelsContainer   = $('reels-container');
+  const resultDiv        = $('result');
+  const holdersSpan      = $('holders');
+  const jackpotSpan      = $('jackpot');
+  const historyList      = $('history-list');
+  const leaderboardList  = $('leaderboard-list');
+  const payoutTimerEl    = $('payout-timer');
+  const playBtn          = $('play-btn');
+  const registerBtn      = $('register-btn');
+  const walletInput      = $('wallet-input');
+  const registeredSpan   = $('registered-wallet');
+  const distributedEl    = $('distributed-value');
+  const demoSpinBtn      = $('demo-spin-btn');
 
-// DOM helpers: tolerant selectors (id first, then class)
-function $id(name, clsFallback) {
-  const byId = document.getElementById(name);
-  if (byId) return byId;
-  if (clsFallback) {
-    return document.querySelector(clsFallback);
-  }
-  return null;
-}
-function $(s) { return document.querySelector(s); }
-function make(tag, cls) { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
+  // sounds (optional elements in HTML if you added them)
+  const spinSound = document.getElementById('spin-sound');
+  const smallWinSound = document.getElementById('small-win');
+  const bigWinSound = document.getElementById('big-win');
+  const jackpotWinSound = document.getElementById('jackpot-win');
+  const backgroundSound = document.getElementById('background-sound');
 
-// DOM elements (try id then class)
-const reelsContainer   = $id('reels-container', '.reels-container');
-const resultDiv        = $id('result', '.result-text');
-const holdersSpan      = $id('holders', '.holders-count') || document.querySelector('#holders') || document.querySelector('#holders-stat');
-const jackpotSpan      = $id('jackpot', '.jackpot-span') || document.querySelector('#jackpot') || document.querySelector('#jackpot-stat');
-const historyList      = $id('history-list', '.history-list') || document.querySelector('#history-list');
-const leaderboardList  = $id('leaderboard-list', '.leaderboard-list') || document.querySelector('#leaderboard-list');
-const timerDiv         = $id('timer', '.timer') || document.querySelector('#timer');
-const playBtn          = $id('play-btn', '.btn.play') || document.querySelector('.btn.play');
-const walletInput      = $id('wallet-input', '.wallet-input') || document.querySelector('.wallet-input');
-const registerBtn      = $id('register-btn', '.register-btn') || document.querySelector('.register-btn');
-const registeredLine   = $id('registered-line', '.registered-line') || document.querySelector('.registered-line');
-const jackpotCard      = document.querySelector('.jackpot-card') || null;
-const distributedSpan  = $id('distributed', '.distributed') || document.querySelector('#distributed');
+  // state
+  let registeredWallet = null;
+  let ws = null;
+  let pendingFinalReels = null;
+  let pendingResultText = null;
+  let reelIntervals = [];
+  let isSpinning = false;
+  let clientTimer = 10; // local tick when in timer state (visual)
+  let cycleState = 'timer'; // timer, spinning, result
 
-const spinSound        = document.getElementById('spin-sound');
-const smallWinSound    = document.getElementById('small-win');
-const bigWinSound      = document.getElementById('big-win');
-const jackpotWinSound  = document.getElementById('jackpot-win');
-const timerSound       = document.getElementById('timer-sound');
-const backgroundSound  = document.getElementById('background-sound');
+  const symbols = ['🍒','🍋','🍇','7'];
 
-let audioAllowed = false;
-let isSpinning   = false;
-let reelIntervals = [];
-let pendingFinalReels = null;
-let pendingResultText = null;
-let registeredWallet = null;
-let payoutEndTs = null;
-let payoutInterval = null;
-
-// backend ws URL: prefer meta tag if present
-const metaWs = document.querySelector('meta[name="backend-ws"]');
-const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-const wsUrl = (metaWs && metaWs.content) ? metaWs.content : `${wsProto}://${location.host}`;
-const ws = new WebSocket(wsUrl);
-
-ws.addEventListener('open', () => {
-  safeSend({ action: 'requestState' });
-});
-
-ws.addEventListener('message', (ev) => {
-  let data;
-  try { data = JSON.parse(ev.data); } catch { return; }
-  if (!data || typeof data !== 'object') return;
-
-  // registration results
-  if (data.type === 'register_result') {
-    if (data.ok) {
-      registeredWallet = data.wallet || (walletInput && walletInput.value) || null;
-      showToast('Registered successfully', 'success');
-      setRegisteredUI(registeredWallet);
-      setPlayEnabled(true);
-    } else {
-      const reason = data.reason || 'failed';
-      if (reason === 'not_holder') showToast('Not a holder — registration denied', 'error');
-      else showToast('Registration failed', 'error');
-      setPlayEnabled(false);
-    }
-    return;
-  }
-
-  // registration revoked (single or batch)
-  if (data.type === 'registration_revoked' || data.type === 'registration_revoked_batch') {
-    const removed = data.type === 'registration_revoked' ? [data.wallet] : (Array.isArray(data.wallets) ? data.wallets : []);
-    if (removed.includes(registeredWallet)) {
-      registeredWallet = null;
-      setRegisteredUI(null);
-      setPlayEnabled(false);
-      showToast('Your registration was removed — you no longer hold the token', 'error');
-    } else {
-      // some other wallets removed; we'll get updated state via state broadcast
-    }
-    return;
-  }
-
-  // spin direct result (when server responds)
-  if (data.type === 'spin_result') {
-    if (data.ok) {
-      pendingFinalReels = data.reels || null;
-      pendingResultText = data.result || 'Try Again';
-      // if reels are returned we stop reels (the current spin cycle will call stopReels)
-      // if we are not animating at the moment, show final straight away:
-      if (!isSpinning) {
-        stopReels(pendingFinalReels, pendingResultText);
-        pendingFinalReels = null;
-        pendingResultText = null;
+  // ensure reels exist
+  function buildInitialReels(){
+    if (!reelsContainer) return;
+    reelsContainer.innerHTML = '';
+    for (let col=0; col<3; col++){
+      const colDiv = make('div','reel-col');
+      for (let r=0; r<3; r++){
+        colDiv.appendChild(createSymbol(randomSymbol()));
       }
+      reelsContainer.appendChild(colDiv);
+    }
+  }
+
+  function randomSymbol(){ return symbols[Math.floor(Math.random()*symbols.length)]; }
+  function createSymbol(sym){
+    const el = make('div','reel-symbol');
+    if (sym === '7') {
+      // show the image if available
+      const img = document.createElement('img');
+      img.src = '/assets/seven.png';
+      img.alt = '7';
+      img.style.height = '60%';
+      el.appendChild(img);
+      el.classList.add('seven');
     } else {
-      const reason = data.reason || 'error';
-      if (reason === 'not_registered') showToast('Wallet not registered — register to play', 'error');
-      else if (reason === 'not_holder') showToast('Not a holder — cannot play', 'error');
-      else showToast('Spin rejected: ' + reason, 'error');
+      el.textContent = sym;
     }
-    return;
+    return el;
   }
 
-  // state broadcast (default)
-  if (data.type === 'state') {
-    if (typeof data.holders === 'number') {
-      holdersSpan && (holdersSpan.textContent = String(data.holders));
-    }
-    if (typeof data.jackpot === 'number' || typeof data.jackpot === 'string') {
-      const v = Number(data.jackpot || 0);
-      if (jackpotSpan) jackpotSpan.textContent = v.toFixed(4) + ' SOL';
-    }
-    if (typeof data.distributedPrizes !== 'undefined') {
-      if (distributedSpan) distributedSpan.textContent = (Number(data.distributedPrizes || 0)).toFixed(4) + ' SOL';
-    }
-    // history
-    if (Array.isArray(data.history)) {
-      historyList && (historyList.innerHTML = '');
-      (data.history || []).forEach(h => {
-        const li = document.createElement('li');
-        const amt = Number(h.amount || 0).toFixed(4);
-        const combo = h.combo || "Win";
-        li.innerHTML = `${h.wallet || '—'} — <strong>${amt} SOL</strong> <span style="opacity:0.85">(${combo})</span>`;
-        historyList && historyList.appendChild(li);
-      });
-    }
-    // leaderboard (pad to 10)
-    if (Array.isArray(data.leaderboard)) {
-      leaderboardList && (leaderboardList.innerHTML = '');
-      const arr = data.leaderboard.slice(0, 10);
-      for (let i=0;i<10;i++) {
-        const li = document.createElement('li');
-        if (arr[i]) li.textContent = `${i+1}. ${arr[i].wallet} — ${arr[i].pts} pts`;
-        else li.textContent = `${i+1}. —`;
-        leaderboardList.appendChild(li);
-      }
-    }
-    // round timer
-    if (data.round && data.round.end) {
-      payoutEndTs = Number(data.round.end) || null;
-      startCountdownTo(payoutEndTs);
-    }
-    // token ca if provided
-    if (data.token_ca) {
-      const el = document.getElementById('token-ca-val');
-      if (el) el.textContent = data.token_ca;
-    }
-    return;
+  // toasts
+  function ensureToastWrap(){ if (!window.__toast_wrap){ const w = make('div','toast-wrap'); document.body.appendChild(w); window.__toast_wrap = w; } return window.__toast_wrap; }
+  function showToast(msg, type='info', ttl=2800){
+    const wrap = ensureToastWrap();
+    const t = make('div','toast ' + (type==='error'?'error':type==='success'?'success':'info'));
+    t.innerHTML = `<strong style="display:block;margin-bottom:6px">${type==='error'?'Error':(type==='success'?'Success':'Info')}</strong><div style="line-height:1.2">${msg}</div>`;
+    wrap.appendChild(t);
+    setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translateX(8px)'; setTimeout(()=>t.remove(),420); }, ttl);
   }
-});
 
-// safe send helper
-function safeSend(obj){
-  try {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
-  } catch {}
-}
-
-// UI helpers
-function showToast(msg, type='info', ttl=2800) {
-  let wrap = document.querySelector('.toast-wrap');
-  if (!wrap) {
-    wrap = document.createElement('div');
-    wrap.className = 'toast-wrap';
-    document.body.appendChild(wrap);
+  // enable/disable play button
+  function enablePlay(yes){
+    if (!playBtn) return;
+    playBtn.disabled = !yes;
+    playBtn.style.opacity = yes ? 1 : 0.55;
   }
-  const t = document.createElement('div');
-  t.className = 'toast ' + (type === 'error' ? 'err' : (type === 'success' ? 'success' : 'info'));
-  t.innerHTML = `<div>${msg}</div>`;
-  wrap.appendChild(t);
-  setTimeout(()=> {
-    t.style.opacity = '0';
-    setTimeout(()=> t.remove(), 420);
-  }, ttl);
-}
 
-function setRegisteredUI(wallet) {
-  if (registeredLine) registeredLine.textContent = wallet ? `Registered: ${wallet}` : 'Registered: —';
-}
+  // open WebSocket based on meta backend-ws or same origin
+  function openWS(){
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+    const meta = document.querySelector('meta[name="backend-ws"]');
+    let base = meta && meta.content ? meta.content : null;
+    if (!base) {
+      // default to same origin with ws protocol (useful for local dev when server serves both)
+      const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+      base = proto + location.host;
+    }
+    try {
+      ws = new WebSocket(base);
+    } catch (e) {
+      console.warn('WS open failed', e);
+      return;
+    }
 
-function setPlayEnabled(yes) {
-  if (!playBtn) return;
-  playBtn.disabled = !yes;
-  if (yes) playBtn.classList.remove('disabled'); else playBtn.classList.add('disabled');
-}
+    ws.addEventListener('open', () => {
+      safeSend({ action: 'requestState' });
+      // if we already have a registered wallet, ask server to validate
+      if (registeredWallet) safeSend({ action: 'validateRegistration', wallet: registeredWallet });
+    });
 
-// reels helpers
-function randomSymbol(){ return symbols[Math.floor(Math.random()*symbols.length)]; }
-function createSymbol(sym){
-  const el = document.createElement('div');
-  el.classList.add('reel-symbol');
-  if (String(sym) === '7' || String(sym).toLowerCase().includes('7')) {
-    const img = document.createElement('img');
-    img.src = '/assets/seven.png';
-    img.alt = '7';
-    img.style.height = '56px';
-    img.style.objectFit = 'contain';
-    el.appendChild(img);
-    el.classList.add('seven');
-  } else {
-    el.textContent = sym;
-  }
-  return el;
-}
+    ws.addEventListener('message', (ev) => {
+      let data;
+      try { data = JSON.parse(ev.data); } catch { return; }
+      if (!data || typeof data !== 'object') return;
 
-function buildReelsInitial(){
-  if (!reelsContainer) return;
-  reelsContainer.innerHTML = '';
-  for (let col=0; col<3; col++){
-    const colDiv = document.createElement('div');
-    colDiv.classList.add('reel-col');
-    for (let r=0; r<3; r++) colDiv.appendChild(createSymbol(randomSymbol()));
-    reelsContainer.appendChild(colDiv);
-  }
-}
-buildReelsInitial();
-
-function startReels() {
-  const reelCols = document.querySelectorAll('.reel-col');
-  reelCols.forEach((col, idx) => {
-    reelIntervals[idx] = setInterval(() => {
-      col.appendChild(createSymbol(randomSymbol()));
-      if (col.children.length > 3) col.removeChild(col.firstChild);
-    }, 100 + idx*20);
-  });
-  isSpinning = true;
-  // spin sound
-  try { if (spinSound && audioAllowed) { spinSound.currentTime = 0; spinSound.loop = true; spinSound.play().catch(()=>{}); } } catch {}
-}
-
-function stopReels(finalReels, resultText){
-  reelIntervals.forEach(clearInterval); reelIntervals = [];
-  const reelCols = document.querySelectorAll('.reel-col');
-  reelCols.forEach((col, idx) => {
-    setTimeout(() => {
-      if (finalReels && finalReels[idx]) {
-        col.innerHTML = '';
-        finalReels[idx].forEach(sym => col.appendChild(createSymbol(sym)));
-      }
-      if (idx === reelCols.length - 1) {
-        isSpinning = false;
-        try { if (spinSound) { spinSound.pause(); spinSound.currentTime = 0; } } catch {}
-        // result
-        resultDiv && (resultDiv.textContent = resultText || 'Try Again');
-        if (resultText && resultText !== 'Try Again') {
-          // flash machine
-          const machine = document.querySelector('.machine-panel');
-          if (machine) { machine.classList.add('win-flash'); setTimeout(()=> machine.classList.remove('win-flash'), 1200); }
-          playResultSound(resultText);
-          // glow middle row
-          const cols = document.querySelectorAll('.reel-col');
-          cols.forEach(c => {
-            const mid = c.children[1];
-            if (mid) { mid.classList.add('win'); setTimeout(()=> mid.classList.remove('win'), 1200); }
-          });
+      // full state broadcast
+      if (data.type === 'state') {
+        if (typeof data.holders === 'number') holdersSpan.textContent = data.holders;
+        if (typeof data.jackpot === 'number') jackpotSpan.textContent = Number(data.jackpot).toFixed(4);
+        if (typeof data.distributed === 'number') distributedEl.textContent = Number(data.distributed).toFixed(4);
+        renderLeaderboard(data.leaderboard || []);
+        renderHistory(data.history || []);
+        if (data.round && data.round.end) {
+          startCountdownTo(Number(data.round.end));
+        }
+        // enable/disable play depending on registration + server provided allowed flag
+        if (data.registered && data.registered[registeredWallet]) {
+          registeredSpan.textContent = registeredWallet || '—';
+          enablePlay(true);
+        } else {
+          if (!registeredWallet) enablePlay(false);
         }
       }
-    }, idx * 300);
-  });
-}
 
-// Play/Timer logic (client-side timer triggers server spin)
-// A short timer is run client-side for UI; server is source-of-truth for results.
-let clientTimer = 10;
-let cycleState = 'timer'; // 'timer', 'spinning', 'result'
-function clientTick() {
-  if (cycleState !== 'timer') return;
-  // show clientTimer
-  if (timerDiv) timerDiv.textContent = String(clientTimer).padStart(2,'0');
-  clientTimer--;
-  if (clientTimer < 0) {
-    // start spin visually and ask server
+      // specific message types
+      if (data.type === 'register_result') {
+        if (data.ok) {
+          registeredWallet = data.wallet;
+          registeredSpan.textContent = data.wallet;
+          showToast('Wallet registered', 'success', 2200);
+          enablePlay(true);
+        } else {
+          showToast('Not a holder or registration failed', 'error', 2600);
+          enablePlay(false);
+        }
+      }
+
+      if (data.type === 'spin_result') {
+        if (data.ok) {
+          // server delivered a final spin result/ reels
+          pendingFinalReels = data.reels || pendingFinalReels;
+          pendingResultText = data.result || pendingResultText;
+        } else {
+          showToast('Spin failed: ' + (data.reason || 'unknown'), 'error', 3000);
+        }
+      }
+
+      if (data.type === 'payouts') {
+        showToast('Payouts distributed: ' + Number(data.distributedTotal || 0).toFixed(4) + ' SOL', 'success', 4000);
+      }
+    });
+
+    ws.addEventListener('close', () => { setTimeout(openWS, 1200); });
+    ws.addEventListener('error', () => {});
+  }
+
+  function safeSend(obj){
+    try { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); }
+    catch(e){}
+  }
+
+  // render helpers
+  function renderLeaderboard(arr){
+    if (!leaderboardList) return;
+    leaderboardList.innerHTML = '';
+    (arr || []).slice(0,10).forEach(e => {
+      const li = make('li');
+      li.textContent = `${String(e.wallet||'????')} — ${Number(e.pts||0)} pts`;
+      leaderboardList.appendChild(li);
+    });
+    // if fewer than 10 lines, pad visually
+    for (let i=(arr||[]).length; i<10; i++){
+      const li = make('li');
+      li.style.opacity = 0.45;
+      li.textContent = `—`;
+      leaderboardList.appendChild(li);
+    }
+  }
+  function renderHistory(arr){
+    if (!historyList) return;
+    historyList.innerHTML = '';
+    (arr||[]).slice(0,6).forEach(win => {
+      const li = make('li');
+      li.innerHTML = `${String(win.wallet||'anon')} — <strong>${Number(win.amount||0).toFixed(4)} SOL</strong> <span style="opacity:.8">(${win.combo||'Win'})</span>`;
+      historyList.appendChild(li);
+    });
+  }
+
+  // reels visual control
+  function startReels(){
+    if (!reelsContainer) return;
+    const cols = reelsContainer.querySelectorAll('.reel-col');
+    cols.forEach((col, ci) => {
+      reelIntervals[ci] = setInterval(()=>{
+        col.appendChild(createSymbol(randomSymbol()));
+        if (col.children.length > 3) col.removeChild(col.firstChild);
+      }, 80 + (ci*20));
+    });
+    isSpinning = true;
+    try { if (spinSound) { spinSound.currentTime = 0; spinSound.loop = true; spinSound.play().catch(()=>{}); } } catch(e){}
+  }
+
+  function stopReels(finalReels, resultText){
+    reelIntervals.forEach(clearInterval);
+    reelIntervals = [];
+    const cols = reelsContainer.querySelectorAll('.reel-col');
+    cols.forEach((col, idx) => {
+      setTimeout(()=>{
+        if (finalReels && finalReels[idx]) {
+          col.innerHTML = '';
+          finalReels[idx].forEach(sym => col.appendChild(createSymbol(sym)));
+        }
+        if (idx === cols.length - 1) {
+          isSpinning = false;
+          try { if (spinSound) { spinSound.pause(); spinSound.currentTime = 0; } } catch(e){}
+          resultDiv.textContent = resultText || 'Try Again';
+          // add visual effects if win
+          if (resultText && /jackpot/i.test(resultText)) {
+            document.querySelector('.machine-panel')?.classList.add('win-flash');
+            setTimeout(()=> document.querySelector('.machine-panel')?.classList.remove('win-flash'), 1200);
+            try { if (jackpotWinSound) jackpotWinSound.play().catch(()=>{}); } catch(e){}
+          } else if (resultText && /x3|Big Win|Solid Win|Nice Win/i.test(resultText)) {
+            try { if (bigWinSound) bigWinSound.play().catch(()=>{}); } catch(e){}
+          } else if (resultText && /x2|Small|Mini|Tiny Win/i.test(resultText)) {
+            try { if (smallWinSound) smallWinSound.play().catch(()=>{}); } catch(e){}
+          }
+        }
+      }, idx * 300);
+    });
+  }
+
+  // timer for auto spin cycle (visual)
+  function localTick(){
+    if (cycleState !== 'timer') return;
+    clientTimer--;
+    if (clientTimer < 0) {
+      // start visual spin and request server spin
+      startReels();
+      cycleState = 'spinning';
+      safeSend({ action: 'requestSpin', wallet: registeredWallet });
+      // stop visual after 3.5s if server doesn't send final
+      setTimeout(()=>{
+        stopReels(pendingFinalReels, pendingResultText);
+        pendingFinalReels = null; pendingResultText = null;
+        cycleState = 'result';
+        setTimeout(()=>{ cycleState = 'timer'; clientTimer = 10; }, 1500);
+      }, 3500);
+    }
+    // update visual timer if present (we keep client visual small)
+    const timerLocal = document.getElementById('timer-local');
+    if (timerLocal) timerLocal.textContent = String(Math.max(0,clientTimer));
+  }
+  setInterval(localTick, 1000);
+
+  // allow manual demo spin for testing
+  if (demoSpinBtn) demoSpinBtn.addEventListener('click', () => {
+    if (isSpinning) return;
     startReels();
-    cycleState = 'spinning';
-    safeSend({ action: 'spin', wallet: registeredWallet });
-    // stop after fixed duration if server hasn't provided final reels
-    setTimeout(() => {
-      stopReels(pendingFinalReels, pendingResultText);
-      pendingFinalReels = null;
-      pendingResultText = null;
-      cycleState = 'result';
-      setTimeout(() => { cycleState = 'timer'; clientTimer = 10; }, 1400);
-    }, 3500);
-  }
-}
+    // simulate server returning something after 2.6s
+    setTimeout(()=>{
+      const sample = [['🍒','🍒','🍒'],['🍋','🍋','🍋'],['7','7','7']];
+      stopReels(sample, 'Demo Win x3');
+    }, 2600);
+  });
 
-// update payment countdown based on server round end (payoutEndTs)
-function startCountdownTo(timestampMs) {
-  // clear any existing interval
-  if (window._payoutInterval) clearInterval(window._payoutInterval);
-
-  function tick() {
-    const now = Date.now();
-    let ms = Math.max(0, timestampMs - now);
-    const sec = Math.floor(ms / 1000);
-    const min = Math.floor(sec / 60);
-    const s = sec % 60;
-    const display = `${String(min).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    const el = document.getElementById('payout-timer'); // ensure you have this id in HTML
-    if (el) el.textContent = display;
-
-    if (ms <= 0) {
-      // reached 0: trigger event to ask backend to distribute prizes
-      try {
-        const backend = window.BACKEND_URL || (document.querySelector('meta[name="backend-url"]') && document.querySelector('meta[name="backend-url"]').content) || '';
-        const url = (backend ? backend : '') + '/admin/execute-payout';
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({})
-        }).catch(e => console.warn('payout trigger failed', e));
-      } catch(e){ console.warn(e); }
-      // reset: start again from +10min locally until server broadcasts new round
-      timestampMs = Date.now() + 10 * 60 * 1000;
-    }
-  }
-
-  tick();
-  window._payoutInterval = setInterval(tick, 1000);
-}
-
-
-// when fetch-ca.js resolves it dispatches 'next_payout_ready' event
-window.addEventListener('next_payout_ready', (ev) => {
-  const next = ev.detail && ev.detail.nextPayout;
-  if (next && Number(next) > 0) startCountdownTo(Number(next));
-});
-
-// if APP_CONFIG already present at page load:
-if (window.APP_CONFIG && window.APP_CONFIG.nextPayout) {
-  startCountdownTo(Number(window.APP_CONFIG.nextPayout));
-}
-
-// play sound depending on result string
-function playResultSound(resultText){
-  try {
-    if (!audioAllowed) return;
-    const r = String(resultText || '').toLowerCase();
-    if (/jackpot|777/.test(r)) {
-      if (jackpotWinSound) jackpotWinSound.play().catch(()=>{});
-    } else if (/x3|3/.test(r) || /x3/i.test(r)) {
-      if (bigWinSound) bigWinSound.play().catch(()=>{});
-    } else if (/x2|2/.test(r)) {
-      if (smallWinSound) smallWinSound.play().catch(()=>{});
-    }
-  } catch {}
-}
-
-// UI events
-if (registerBtn) {
-  registerBtn.addEventListener('click', () => {
-    const w = (walletInput && walletInput.value) ? String(walletInput.value).trim() : null;
-    if (!w) { showToast('Enter a wallet address to register', 'error'); return; }
+  // registration button -> send registration via WS; server will verify holder on-chain
+  if (registerBtn) registerBtn.addEventListener('click', async () => {
+    const w = (walletInput && walletInput.value || '').trim();
+    if (!w) { showToast('Enter a wallet address first', 'error'); return; }
+    if (!ws || ws.readyState !== WebSocket.OPEN) { showToast('Not connected to server yet, please wait', 'error'); return; }
+    // send registration request
     safeSend({ action: 'register', wallet: w });
-    showToast('Checking wallet...', 'info', 1200);
   });
-}
 
-// disable play by default (until registration OK)
-setPlayEnabled(false);
-
-if (playBtn) {
-  playBtn.addEventListener('click', () => {
-    if (!registeredWallet) { showToast('Register a holder wallet to play', 'error'); return; }
-    audioAllowed = true;
-    try { if (backgroundSound) backgroundSound.play().catch(()=>{}); } catch {}
-    // trigger immediate spin via client timer
-    clientTimer = 0;
-    clientTick();
+  // play button -> only allowed if registeredWallet set
+  if (playBtn) playBtn.addEventListener('click', () => {
+    if (!registeredWallet) { showToast('You must register a holder wallet first', 'error'); enablePlay(false); return; }
+    if (!ws || ws.readyState !== WebSocket.OPEN) { showToast('Server disconnected', 'error'); return; }
+    // send spin request; the server should respond with spin_result message type
+    safeSend({ action: 'requestSpin', wallet: registeredWallet });
+    // start local visuals (server final result will override)
+    startReels();
+    setTimeout(()=> {
+      stopReels(pendingFinalReels, pendingResultText);
+      pendingFinalReels = null; pendingResultText = null;
+    }, 3500);
   });
-}
 
-// small "auto timer" loop for clientTick (keeps local UI responsive; final result controlled by server)
-setInterval(clientTick, 1000);
+  // payout countdown: start a per-second tick to show mm:ss and when zero, call backend to distribute
+  function startCountdownTo(timestampMs){
+    if (!timestampMs || isNaN(Number(timestampMs))) return;
+    if (window.__payout_timer_interval) clearInterval(window.__payout_timer_interval);
 
-// initial local styling/UX
-setRegisteredUI(null);
+    function tick() {
+      const now = Date.now();
+      let ms = Math.max(0, timestampMs - now);
+      const sec = Math.floor(ms/1000);
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      if (payoutTimerEl) payoutTimerEl.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 
-// Expose some helpers for debugging (optional)
-window._solo_debug = {
-  registeredSet: () => registeredWallet,
-  requestState: () => safeSend({ action: 'requestState' })
-};
+      if (ms <= 0) {
+        // ask server to execute distribution (server may require secret; if so, server will ignore if unauthorized)
+        try {
+          fetch((window.BACKEND_URL ? window.BACKEND_URL : '') + '/admin/execute-payout', { method: 'POST' })
+            .catch(e => console.warn('payout trigger failed', e));
+        } catch (e) {}
+        // reset to 10 minutes locally until server pushes new end
+        timestampMs = Date.now() + (10 * 60 * 1000);
+      }
+    }
+
+    tick();
+    window.__payout_timer_interval = setInterval(tick, 1000);
+  }
+
+  // when fetch-ca.js dispatches next_payout_ready
+  window.addEventListener('next_payout_ready', ev => {
+    const next = ev?.detail?.nextPayout;
+    if (next) startCountdownTo(Number(next));
+  });
+
+  // build UI on load & open WS
+  document.addEventListener('DOMContentLoaded', () => {
+    // build reels initial grid
+    buildInitialReels();
+    // disable play by default
+    enablePlay(false);
+    // open websocket
+    openWS();
+    // expose a global helper for debug
+    window.__casino_debug = { openWS, enablePlay, startReels, stopReels };
+  });
+
+})();
