@@ -11,33 +11,40 @@ export default function Home() {
         <link rel="stylesheet" href="/style.css" />
       </Head>
 
+      {/* Backend origin + default round seconds */}
+      <Script id="backend-origin" strategy="beforeInteractive">{`
+        window.BACKEND_ORIGIN = "${process.env.NEXT_PUBLIC_BACKEND_ORIGIN || ""}";
+        window.DEFAULT_ROUND_SECS = 600;
+      `}</Script>
+
       {/* fetch token CA + round info from backend */}
       <Script src="/fetch-ca.js" strategy="afterInteractive" />
 
       <div className="app-root">
         <header className="header-row">
+          {/* LEFT: brand */}
           <div className="title-block">
             <h1 className="title">Casino Royale</h1>
             <div className="subline">Luxury slot experience — real rewards</div>
           </div>
 
-          {/* token CA container (between title and wallet) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* CENTER: CA */}
+          <div className="header-mid">
             <div id="token-ca-container" className="token-ca-container">
               <span className="token-ca-label">CA:</span>
               <span id="token-ca-val" className="token-ca">—</span>
             </div>
+          </div>
 
-            {/* wallet/register area */}
-            <div className="wallet-section">
-              <div className="wallet-row">
-                <input id="wallet-input" className="wallet-input" placeholder="Wallet address" />
-                <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
-                  <button id="register-btn" className="btn small">Register</button>
-                </div>
+          {/* RIGHT: wallet/register */}
+          <div className="header-right wallet-section">
+            <div className="wallet-row">
+              <input id="wallet-input" className="wallet-input" placeholder="Wallet address" />
+              <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+                <button id="register-btn" className="btn small">Register</button>
               </div>
-              <div id="registered-line" className="registered-line">Registered: —</div>
             </div>
+            <div id="registered-line" className="registered-line">Registered: —</div>
           </div>
         </header>
 
@@ -52,7 +59,10 @@ export default function Home() {
                 <li>🍇 🍇 🍇 = Big Win (200 pts)</li>
                 <li>🍋 🍋 🍋 = Solid Win (175 pts)</li>
                 <li>🍒 🍒 🍒 = Nice Win (150 pts)</li>
-                <li>7 7 7 = JACKPOT (500 pts)</li>
+                <li>🍇 🍇 X = Double Grape (100 pts)</li>
+                <li>🍋 🍋 X = Double Lemon (75 pts)</li>
+                <li>🍒 🍒 X = Double Cherry (50 pts)</li>
+                <li><img src="/assets/seven.png" alt="7" style={{height:'1em',verticalAlign:'-0.1em'}}/> <img src="/assets/seven.png" alt="7" style={{height:'1em',verticalAlign:'-0.1em'}}/> <img src="/assets/seven.png" alt="7" style={{height:'1em',verticalAlign:'-0.1em'}}/> = JACKPOT (500 pts)</li>
               </ul>
             </section>
 
@@ -61,11 +71,9 @@ export default function Home() {
               <ol id="leaderboard-list" className="leaderboard-list"></ol>
             </section>
 
-            <section id="distributed" className="panel golden-panel">
-              <h3>Distributed</h3>
-              <div className="stat-card distributed-card">
-                <div className="value" id="distributed-val">0</div>
-              </div>
+            <section id="payouts" className="panel golden-panel">
+              <h3>Payouts (per round)</h3>
+              <ol id="payouts-list" className="payouts-list"></ol>
             </section>
           </aside>
 
@@ -84,24 +92,21 @@ export default function Home() {
                 <div className="value" id="jackpot-val">0</div>
               </div>
 
+              <div className="stat-card distributed-card golden-panel">
+                <div className="label">Distributed</div>
+                <div className="value" id="distributed-val">0</div>
+              </div>
+
               <div className="stat-card timer-card golden-panel">
                 <div className="label">Payout In</div>
-                <div className="value" id="timer-val">00:00</div>
+                <div className="value" id="timer-val">10:00</div>
               </div>
             </div>
 
             {/* slot machine panel */}
             <div id="machine" className="machine-panel golden-panel">
               <div id="reels-container" className="reels-container gold-bg">
-                <div className="reel-col">
-                  <div className="reel-symbol">🍇</div>
-                </div>
-                <div className="reel-col">
-                  <div className="reel-symbol">🍋</div>
-                </div>
-                <div className="reel-col">
-                  <div className="reel-symbol">🍒</div>
-                </div>
+                {/* leave empty: script.js will build cols/rows or pad to 3 */}
               </div>
 
               <div className="controls-panel">
@@ -125,7 +130,7 @@ export default function Home() {
 
           </main>
 
-          {/* RIGHT (if you add future panels) */}
+          {/* RIGHT (optional future content) */}
           <aside className="right-col"></aside>
 
         </div>
