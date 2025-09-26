@@ -23,6 +23,7 @@ const bigWinSound      = document.getElementById('big-win');
 const jackpotWinSound  = document.getElementById('jackpot-win');
 const timerSound       = document.getElementById('timer-sound');
 const backgroundSound  = document.getElementById('background-sound');
+let _bgStarted = false;
 
 let ws = null;
 let canPlay = false;
@@ -207,6 +208,7 @@ function stopReels(finalReels, resultText){
   isSpinning = false;
   if (spinSound) { try { spinSound.pause(); spinSound.currentTime = 0; } catch {} }
   if (resultDiv && resultText) resultDiv.textContent = String(resultText);
+  playWinSfx(resultText);
 }
 
 // ---- Countdown ----
@@ -257,6 +259,7 @@ if (playBtn) {
       return;
     }
     startReels();
+    startBackgroundLoopOnce();
     safeSend({ action: 'spin', wallet: registeredWallet });
     // Safety stop in 3.5s if server result didn't arrive
     setTimeout(() => {
@@ -305,4 +308,28 @@ function renderPayouts(arr){
     li.textContent = `#${i+1} — ${pct}%`;
     list.appendChild(li);
   }
+}
+
+// Start background music on first user interaction (autoplay-safe)
+function startBackgroundLoopOnce(){
+  if (_bgStarted) return;
+  _bgStarted = true;
+  try {
+    if (backgroundSound) {
+      backgroundSound.loop = true;
+      backgroundSound.volume = 0.35;
+      backgroundSound.play().catch(()=>{});
+    }
+  } catch {}
+}
+['click','pointerdown','keydown','touchstart'].forEach(ev => {
+  window.addEventListener(ev, startBackgroundLoopOnce, { once: true, passive: true });
+});
+
+function playWinSfx(resultText){
+  const res = String(resultText || '').toUpperCase();
+  const play = (el) => { try { el.currentTime = 0; el.play().catch(()=>{}); } catch {} };
+  if (res.includes('777') || res.includes('JACKPOT')) { if (jackpotWinSound) play(jackpotWinSound); return; }
+  if (res.includes('GGG') || res.includes('LLL') || res.includes('CCC') || res.includes('🍇🍇🍇') || res.includes('🍋🍋🍋') || res.includes('🍒🍒🍒')) { if (bigWinSound) play(bigWinSound); return; }
+  if (res.includes('GGX') || res.includes('LLX') || res.includes('CCX') || res.includes('🍇 🍇') || res.includes('🍋 🍋') || res.includes('🍒 🍒')) { if (smallWinSound) play(smallWinSound); return; }
 }
