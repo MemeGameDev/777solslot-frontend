@@ -8,7 +8,6 @@ export default function Home() {
         <title>Casino Royale</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/assets/seven.png" />
-        {/* Backend WS meta — keep set to your backend tunnel URL */}
         <meta name="backend-ws" content="wss://response-fortune-adrian-period.trycloudflare.com/" />
       </Head>
 
@@ -19,7 +18,6 @@ export default function Home() {
             <div className="subline">Luxury slot experience — real memecoin rewards</div>
           </div>
 
-          {/* CA container between title and wallet block */}
           <div className="token-ca" style={{alignSelf:'center', marginRight:12}}>
             <strong style={{marginRight:6}}>CA:</strong>
             <span id="token-ca-val">—</span>
@@ -37,29 +35,32 @@ export default function Home() {
             <div className="panel paytable golden-panel">
               <h3>Winning Combinations</h3>
               <ul className="paytable-list">
-                <li>🍇 🍇 🍇 = Big Win (200 pts)</li>
-                <li>🍋 🍋 🍋 = Solid Win (175 pts)</li>
-                <li>🍒 🍒 🍒 = Nice Win (150 pts)</li>
-                <li>🍇 🍇 X = Small Win (100 pts)</li>
-                <li>🍋 🍋 X = Mini Win (75 pts)</li>
-                <li>🍒 🍒 X = Tiny Win (50 pts)</li>
-                <li style={{display:'flex',gap:6,alignItems:'center'}}>
-                  <img src="/assets/seven.png" alt="7" style={{height:22}}/>
-                  <img src="/assets/seven.png" alt="7" style={{height:22}}/>
-                  <img src="/assets/seven.png" alt="7" style={{height:22}}/>
-                  <span style={{marginLeft:8}}> = JACKPOT (500 pts)</span>
-                </li>
+                <li><span>🍇 🍇 🍇</span> <span>= Big Win (200 pts)</span></li>
+                <li><span>🍋 🍋 🍋</span> <span>= Solid Win (175 pts)</span></li>
+                <li><span>🍒 🍒 🍒</span> <span>= Nice Win (150 pts)</span></li>
+                <li><span>🍇 🍇 X</span> <span>= Small Win (100 pts)</span></li>
+                <li><span>🍋 🍋 X</span> <span>= Mini Win (75 pts)</span></li>
+                <li><span>🍒 🍒 X</span> <span>= Tiny Win (50 pts)</span></li>
+                <li className="jackpot-line"><span style={{display:'inline-flex',gap:6,alignItems:'center'}}><img src="/assets/seven.png" style={{height:20}} /><img src="/assets/seven.png" style={{height:20}} /><img src="/assets/seven.png" style={{height:20}} /></span> <span>= JACKPOT (500 pts)</span></li>
               </ul>
             </div>
 
             <div className="panel leaderboard golden-panel">
               <h4>Leaderboard — Top 10</h4>
-              <ol id="leaderboard-list" className="leaderboard-list"></ol>
+              <ol id="leaderboard-list" className="leaderboard-list">
+                {/* placeholders filled by script.js */}
+              </ol>
             </div>
 
-            <div className="panel distributed-card golden-panel">
-              <h4>Distributed</h4>
-              <div id="distributed-prizes" className="value" style={{marginTop:10}}>0.0000 SOL</div>
+            <div className="panel payouts-panel golden-panel">
+              <h4>Payouts (per round)</h4>
+              <ol style={{marginTop:8}}>
+                <li>1st — 30%</li>
+                <li>2nd — 20%</li>
+                <li>3rd — 15%</li>
+                <li>4th — 10%</li>
+                <li>Remaining holders split — 25%</li>
+              </ol>
             </div>
           </aside>
 
@@ -75,15 +76,20 @@ export default function Home() {
                 <div id="jackpot" className="value">0.0000 SOL</div>
               </div>
 
+              <div className="stat-card distributed-card golden-panel">
+                <div className="label">Distributed</div>
+                <div id="distributed-prizes" className="value">0.0000 SOL</div>
+              </div>
+
               <div className="stat-card timer-card golden-panel">
                 <div className="label">Payout in</div>
-                <div id="payout-timer" className="value">--:--</div>
+                <div id="payout-timer" className="value">10:00</div>
               </div>
             </div>
 
             <div className="panel machine-panel golden-panel" id="machine-panel" style={{position:'relative', overflow:'visible'}}>
               <canvas id="confetti-canvas" style={{position:'absolute', inset:0, pointerEvents:'none'}}></canvas>
-              <div id="reels-container" className="reels-container"></div>
+              <div id="reels-container" className="reels-container" aria-hidden="true"></div>
               <div id="win-line" style={{position:'absolute',left:0,right:0,top:'50%',height:6,pointerEvents:'none'}}></div>
             </div>
 
@@ -97,7 +103,6 @@ export default function Home() {
           </section>
         </main>
 
-        {/* audio */}
         <audio id="background-sound" preload="auto" loop src="/assets/background.mp3"></audio>
         <audio id="spin-sound" preload="auto" src="/assets/spin-sound.mp3"></audio>
         <audio id="small-win" preload="auto" src="/assets/small-win.mp3"></audio>
@@ -106,7 +111,6 @@ export default function Home() {
 
       </div>
 
-      {/* first load the fetch-ca script to show the CA, then the main logic */}
       <Script src="/fetch-ca.js" strategy="afterInteractive" />
       <Script src="/script.js" strategy="afterInteractive" />
     </>

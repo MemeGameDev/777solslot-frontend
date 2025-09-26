@@ -1,6 +1,5 @@
 /* frontend/public/style.css - unified theme + subtle gold accents */
 
-/* theme tokens */
 :root{
   --bg:#040303;
   --panel:#080808;
@@ -20,18 +19,8 @@
 html,body{height:100%;margin:0;background:linear-gradient(180deg,#030202,#050404);color:var(--text);font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;}
 .app-root{max-width:1320px;margin:18px auto;padding:18px;position:relative;overflow:visible}
 
-/* subtle vignette across the whole app */
-.app-root::before{
-  content: "";
-  position: absolute;
-  inset: -30px;
-  pointer-events: none;
-  border-radius: 18px;
-  opacity: 0.045;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1600' height='900' viewBox='0 0 1600 900'><defs><linearGradient id='g' x1='0' x2='1'><stop offset='0' stop-color='%23b48b2f' stop-opacity='0.18'/><stop offset='1' stop-color='%23e6cc76' stop-opacity='0.05'/></linearGradient><pattern id='grain' width='120' height='120' patternUnits='userSpaceOnUse' patternTransform='rotate(18)'><rect width='120' height='120' fill='rgba(0,0,0,0)' /><path d='M0 60 L120 0' stroke='%23b48b2f' stroke-opacity='0.06' stroke-width='1'/></pattern></defs><rect width='100%' height='100%' fill='url(%23grain)'/><rect width='100%' height='100%' fill='url(%23g)' opacity='0.22'/></svg>");
-  mix-blend-mode: overlay;
-  box-shadow: inset 0 80px 140px rgba(0,0,0,0.6);
-}
+/* subtle vignette */
+.app-root::before{ content:""; position:absolute; inset:-30px; pointer-events:none; border-radius:18px; opacity:0.045; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1600' height='900' viewBox='0 0 1600 900'><defs><linearGradient id='g' x1='0' x2='1'><stop offset='0' stop-color='%23b48b2f' stop-opacity='0.18'/><stop offset='1' stop-color='%23e6cc76' stop-opacity='0.05'/></linearGradient><pattern id='grain' width='120' height='120' patternUnits='userSpaceOnUse' patternTransform='rotate(18)'><rect width='120' height='120' fill='rgba(0,0,0,0)' /><path d='M0 60 L120 0' stroke='%23b48b2f' stroke-opacity='0.06' stroke-width='1'/></pattern></defs><rect width='100%' height='100%' fill='url(%23grain)'/><rect width='100%' height='100%' fill='url(%23g)' opacity='0.22'/></svg>"); mix-blend-mode: overlay; box-shadow: inset 0 80px 140px rgba(0,0,0,0.6);}
 
 /* header */
 .header-row{display:flex;align-items:center;gap:18px;justify-content:space-between}
@@ -39,95 +28,62 @@ html,body{height:100%;margin:0;background:linear-gradient(180deg,#030202,#050404
 .title{font-family:'Orbitron',sans-serif;color:var(--accent);letter-spacing:6px;margin:0;font-size:28px}
 .subline{color:var(--sub);font-size:13px}
 
-/* token-ca small */
-.token-ca {
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  background: linear-gradient(180deg, rgba(255,241,204,0.06), rgba(255,245,209,0.02));
-  padding:8px 12px;
-  border-radius:10px;
-  border:1px solid rgba(255,200,60,0.12);
-  color:#f6e7c2;
-  font-weight:700;
-}
-
-/* STATS row */
-.stats-row{
-  display:flex;
-  gap:12px;
-  align-items:center;
-  justify-content:center;
-  width:100%;
-  margin-bottom:12px;
-  flex-wrap:wrap;
-}
-.stat-card{
-  background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.22));
-  border-radius:12px;
-  padding:10px 14px;
-  border:2px solid rgba(255,213,74,0.06);
-  min-width:150px;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  box-shadow:0 14px 40px rgba(0,0,0,0.6);
-  transition: box-shadow 300ms ease, border-color 300ms ease, transform 220ms ease;
-}
-.stat-card .label{font-size:12px;color:var(--sub);margin-bottom:6px}
-.stat-card .value{font-weight:800;color:var(--text);font-size:18px;display:flex;gap:6px;align-items:baseline;white-space:nowrap}
-
-/* special panel variants */
-.holders-card, .jackpot-card, .distributed-card, .timer-card{ border-color: var(--gold-border); box-shadow: 0 12px 36px rgba(255,180,60,0.06), 0 0 18px rgba(255,190,60,0.04); }
-.jackpot-card{border-color:rgba(255,215,80,0.52)}
-.jackpot-card .value{color:var(--accent)}
-.jackpot-card .value.glow{box-shadow:0 0 64px rgba(255,210,80,0.66); animation:goldPulse 2.6s infinite}
-@keyframes goldPulse{0%{box-shadow:0 0 0 rgba(255,200,80,0)}50%{box-shadow:0 0 44px rgba(255,200,80,0.28)}100%{box-shadow:0 0 0 rgba(255,200,80,0)}}
+/* token-ca */
+.token-ca { display:inline-flex; align-items:center; gap:8px; background: linear-gradient(180deg, rgba(255,241,204,0.06), rgba(255,245,209,0.02)); padding:8px 12px; border-radius:10px; border:1px solid rgba(255,200,60,0.12); color:#f6e7c2; font-weight:700; }
 
 /* layout */
 .main-grid{display:grid;grid-template-columns:320px 1fr;gap:20px;margin-top:8px;align-items:start}
 .left-col{display:flex;flex-direction:column;gap:16px}
 .panel{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.22));border-radius:12px;padding:14px;border:1px solid rgba(255,213,74,0.04);box-shadow:0 18px 50px rgba(0,0,0,0.6)}
 
-/* golden panel (the subtle finishing touch you requested) */
+/* golden panel - slightly stronger gold overlay for requested containers */
 .golden-panel{
-  background: linear-gradient(180deg, rgba(255,238,180,0.02), rgba(0,0,0,0.16));
-  border: 2px solid rgba(255,200,70,0.14);
+  background: linear-gradient(180deg, rgba(255,224,140,0.03), rgba(0,0,0,0.16));
+  border: 2px solid rgba(255,190,60,0.12);
   box-shadow: 0 8px 22px rgba(0,0,0,0.45);
   border-radius: 12px;
   padding: 12px;
 }
 
-/* center */
+/* stats row */
+.stats-row{display:flex;gap:12px;align-items:center;justify-content:center;width:100%;margin-bottom:12px;flex-wrap:wrap}
+.stat-card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.22));border-radius:12px;padding:10px 14px;border:2px solid rgba(255,213,74,0.06);min-width:150px;display:flex;flex-direction:column;align-items:center;box-shadow:0 14px 40px rgba(0,0,0,0.6);transition: box-shadow 300ms ease, border-color 300ms ease, transform 220ms ease}
+.stat-card .label{font-size:12px;color:var(--sub);margin-bottom:6px}
+.stat-card .value{font-weight:800;color:var(--text);font-size:18px;display:flex;gap:6px;align-items:baseline;white-space:nowrap}
+
+/* special stat styling */
+.holders-card, .jackpot-card, .distributed-card, .timer-card{ border-color: var(--gold-border); box-shadow: 0 12px 36px rgba(255,180,60,0.06), 0 0 18px rgba(255,190,60,0.04); }
+.jackpot-card .value, .distributed-card .value{font-weight:900}
+
+/* center machine */
 .center-col{display:flex;flex-direction:column;gap:12px;align-items:center}
 .machine-panel{width:760px;max-width:100%;padding:26px;border-radius:16px;border:8px solid var(--gold-border);background:linear-gradient(180deg,#070606,#030202);box-shadow:0 22px 60px rgba(0,0,0,0.75), 0 0 36px rgba(255,200,60,0.06);display:flex;flex-direction:column;align-items:center;gap:18px;position:relative;overflow:visible;transition:box-shadow 300ms ease, transform 220ms ease}
-.machine-panel:hover{transform:translateY(-6px);box-shadow:0 28px 72px rgba(0,0,0,0.8), 0 0 60px rgba(255,200,60,0.12)}
 
 /* reels */
 .reels-container{display:flex;gap:20px;justify-content:center;width:100%}
 .reel-col{display:flex;flex-direction:column;gap:12px;align-items:center}
 .reel-symbol{width:130px;height:110px;background:linear-gradient(180deg,#fff,#fff);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:40px;box-shadow:inset 0 -10px 34px rgba(0,0,0,0.06),0 12px 36px rgba(0,0,0,0.6);border:6px solid #fff;color:#191919}
 .reel-symbol.seven{background:linear-gradient(180deg,#fff8e3,#fff0b1)}
-.reel-symbol.win{box-shadow: 0 0 30px rgba(255,200,60,0.45), 0 8px 24px rgba(0,0,0,0.6); transform:scale(1.04);}
+.reel-symbol.win{box-shadow:0 0 30px rgba(255,200,60,0.45);transform:scale(1.04)}
 
 /* controls */
 .controls-panel{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:6px}
 .btn{background:linear-gradient(180deg,var(--accent), #f5c04a);border:0;padding:10px 14px;border-radius:12px;cursor:pointer;font-weight:700;color:#222;box-shadow:0 10px 28px rgba(0,0,0,0.45)}
 .btn.small{padding:7px 10px;font-size:13px;border-radius:10px}
 .btn.play{padding:18px 42px;border-radius:40px;font-size:20px}
-.btn.play[disabled]{opacity:0.45;cursor:not-allowed;filter:grayscale(0.2);box-shadow:none}
+
+/* paytable list - prevent wrap on jackpot line */
+.paytable-list{margin:0;padding-left:6px;color:var(--text);list-style:none}
+.paytable-list li{display:flex;gap:10px;align-items:center;padding:6px 0}
+.paytable-list .jackpot-line{white-space:nowrap; font-weight:700}
+
+/* leaderboard */
+.leaderboard-list{margin:0;padding-left:6px;color:var(--text);list-style:none}
+.leaderboard-list li{display:block;padding:8px 6px;border-bottom:1px dashed rgba(255,200,0,0.03);font-size:14px;color:var(--sub)}
 
 /* result */
 .result-text{font-size:20px;color:var(--accent);text-align:center}
 .register-note{margin-top:8px;opacity:0.92;color:var(--sub);font-size:15px}
-
-/* toast */
-.toast-wrap{position:fixed;right:18px;top:18px;z-index:9999;display:flex;flex-direction:column;gap:8px}
-.toast{min-width:220px;max-width:360px;background:rgba(10,9,8,0.9);border-left:4px solid var(--accent);padding:10px 12px;border-radius:8px;color:var(--text);box-shadow:0 12px 36px rgba(0,0,0,0.6);font-size:13px}
-
-/* gold win flash */
-.win-flash{animation:flashGlow 1.1s ease forwards}
-@keyframes flashGlow{0%{box-shadow:0 0 0 rgba(255,200,80,0);transform:scale(1)}30%{box-shadow:0 0 40px rgba(255,200,80,0.35);transform:scale(1.01)}100%{box-shadow:0 0 0 rgba(255,200,80,0);transform:scale(1)}}
 
 /* responsive */
 @media (max-width:980px){
